@@ -1,0 +1,11 @@
+{
+  "name": "YASMA",
+  "short_name": "Yet Another Secure Messaging App",
+  "scope": ".",
+  "start_url": "/",
+  "icons": [
+  ],
+  "theme_color": "#ffffff",
+  "background_color": "#ffffff",
+  "display": "standalone"
+}
