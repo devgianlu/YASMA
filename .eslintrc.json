@@ -15,7 +15,8 @@
     "plugin:@typescript-eslint/recommended"
   ],
   "rules": {
-    "quotes": ["error", "single"]
+    "quotes": ["error", "single"],
+    "jsx-quotes":  "error"
   },
   "parserOptions": {
     "ecmaVersion": "latest",
