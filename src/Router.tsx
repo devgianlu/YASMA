@@ -7,7 +7,7 @@ import {Container} from 'react-bootstrap';
 
 const Router: FunctionComponent = () => {
 	return (
-		<Container>
+		<Container className="h-100" fluid>
 			<BrowserRouter>
 				<Routes>
 					<Route path="/" element={<Homepage/>}/>

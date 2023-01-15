@@ -1,10 +1,10 @@
 /* eslint-disable @typescript-eslint/no-var-requires */
 
-const path = require('path');
-const HtmlWebpackPlugin = require('html-webpack-plugin');
-const WorkboxPlugin = require('workbox-webpack-plugin');
+const path = require('path')
+const HtmlWebpackPlugin = require('html-webpack-plugin')
 
 module.exports = {
+	context: __dirname,
 	entry: './src/index.tsx',
 	module: {
 		rules: [
@@ -25,15 +25,10 @@ module.exports = {
 	plugins: [
 		new HtmlWebpackPlugin({
 			template: path.join(__dirname, 'public', 'index.html'),
-		}),
-		new WorkboxPlugin.InjectManifest({
-			compileSrc: true,
-			swSrc: './src/sw',
-			exclude: [/./]
 		})
 	],
 	output: {
 		filename: 'bundle.js',
 		path: path.resolve(__dirname, 'dist'),
 	},
-};
+}

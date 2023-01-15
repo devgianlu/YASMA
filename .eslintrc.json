@@ -2,7 +2,6 @@
   "env": {
     "browser": true,
     "es2022": true,
-    "serviceworker": true,
     "node": true
   },
   "parser": "@typescript-eslint/parser",
@@ -16,7 +15,8 @@
   ],
   "rules": {
     "quotes": ["error", "single"],
-    "jsx-quotes":  "error"
+    "jsx-quotes": "error",
+    "semi": ["error", "never"]
   },
   "parserOptions": {
     "ecmaVersion": "latest",
