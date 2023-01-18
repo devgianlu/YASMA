@@ -1,5 +1,5 @@
-import {Chat, ChatItem} from '../types'
-import {openDb, resolveDbRequest} from './db'
+import {Chat} from '../types'
+import db from './db'
 import manager from './peer'
 
 const getSelfId = (): string => {
@@ -22,56 +22,34 @@ export const init = async () => {
 	await manager.init(getSelfId(), getSelfUsername())
 
 	manager.onmessage = async (peer, text) => {
-		const db = await openDb()
-		const trans = db.transaction(['chats', 'messages'], 'readwrite')
-		const user = await resolveDbRequest(trans.objectStore('chats').get(peer))
-		if (!user) {
+		if (!await db.hasChat(peer)) {
 			console.log('message from unknown user') // FIXME
 			return
 		}
 
-		await resolveDbRequest(trans.objectStore('messages').put({text}, peer + '_' + new Date().getTime()))
+		await db.storeMessage(peer, {
+			text,
+			read: false,
+			own: false,
+			time: Date.now() /* TODO: time should be sent with message */
+		})
 	}
 
-	const db = await openDb()
-	const trans = db.transaction('chats', 'readonly')
-	for (const id of await resolveDbRequest(trans.objectStore('chats').getAllKeys()))
-		await manager.connectTo(id as string)
+	// Try to connect to all know peers asynchronously
+	for (const id of await db.getChatIds())
+		manager.connectTo(id as string).catch(() => console.error(`failed connecting to peer ${id}`))
 }
 
 export const startChat = async (id: string): Promise<Chat> => {
 	const [peer, username] = await manager.connectTo(id)
+	if (await db.hasChat(peer))
+		return db.getChat(peer)
 
-	const db = await openDb()
-	const trans = db.transaction('chats', 'readwrite')
-	await resolveDbRequest(trans.objectStore('chats').put({peer, username}, peer))
+	await db.createChat(peer, username)
 	return {peer, username, messages: []}
 }
 
-export const getChats = async (): Promise<ChatItem[]> => {
-	const db = await openDb()
-	const trans = db.transaction('chats', 'readonly')
-	return await resolveDbRequest(trans.objectStore('chats').getAll())
-}
-
-export const getChat = async (peer: string): Promise<Chat> => {
-	const db = await openDb()
-	const trans = db.transaction(['chats', 'messages'], 'readonly')
-	const user = await resolveDbRequest(trans.objectStore('chats').get(peer))
-	if (!user)
-		return undefined
-
-	const messages = await resolveDbRequest(trans.objectStore('messages').getAll(IDBKeyRange.bound(peer + '_0', peer + '_9')))
-
-	return {
-		peer, username:
-		user.username,
-		messages: messages.map(x => {
-			return {text: x, time: 0, read: false}
-		})
-	}
-}
-
 export const sendChatMessage = async (peer: string, text: string): Promise<void> => {
-	manager.sendMessage(peer, text)
+	await manager.sendMessage(peer, text)
+	await db.storeMessage(peer, {text, read: true, own: true, time: Date.now()})
 }

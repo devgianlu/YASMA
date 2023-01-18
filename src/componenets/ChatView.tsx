@@ -2,7 +2,8 @@ import React, {FunctionComponent, useCallback, useContext, useEffect, useState} 
 import {HomepageContext} from '../pages/HomepageContext'
 import {Chat} from '../types'
 import {Button, Form, InputGroup} from 'react-bootstrap'
-import {getChat, sendChatMessage} from '../p2p'
+import {sendChatMessage} from '../p2p'
+import db from '../p2p/db'
 
 const ChatBody: FunctionComponent<{ chat: Chat }> = ({chat}) => {
 
@@ -42,7 +43,7 @@ const ChatView: FunctionComponent = () => {
 			return
 		}
 
-		getChat(ctx.current.peer).then(setChat)
+		db.getChat(ctx.current.peer).then(setChat)
 	}, [ctx.current])
 
 	const send = useCallback((text: string) => {

@@ -2,14 +2,15 @@ import React, {FunctionComponent, useContext, useEffect, useState} from 'react'
 import {Badge, ListGroup} from 'react-bootstrap'
 import {HomepageContext} from '../pages/HomepageContext'
 import {ChatItem} from '../types'
-import {getChats, startChat} from '../p2p'
+import {startChat} from '../p2p'
+import db from '../p2p/db'
 
 const ChatList: FunctionComponent = () => {
 	const ctx = useContext(HomepageContext)
 
 	const [chats, setChats] = useState<ChatItem[]>([])
 	useEffect(() => {
-		getChats().then(setChats)
+		db.getChats().then(setChats)
 	}, [])
 
 	return (

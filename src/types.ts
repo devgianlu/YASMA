@@ -6,9 +6,11 @@ export type ChatItem = {
 }
 
 export type ChatMessage = {
+	id: number
 	text: string
 	time: number
 	read: boolean
+	own: boolean
 }
 
 export type Chat = {
