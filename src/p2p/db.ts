@@ -2,7 +2,7 @@ import {Chat, ChatItem, ChatMessage} from '../types'
 
 const openDb = async (): Promise<IDBDatabase> => {
 	return new Promise((accept, reject) => {
-		const req = self.indexedDB.open('yasm', 4)
+		const req = self.indexedDB.open('yasm', 1)
 
 		req.addEventListener('success', () => {
 			accept(req.result)
@@ -13,12 +13,9 @@ const openDb = async (): Promise<IDBDatabase> => {
 			switch (ev.oldVersion) {
 				case 0:
 					req.result.createObjectStore('chats')
-				// eslint-disable-next-line no-fallthrough
-				case 1:
 					req.result.createObjectStore('messages')
-				// eslint-disable-next-line no-fallthrough
-				case 4:
 					req.result.createObjectStore('counters')
+					req.result.createObjectStore('unsentMessages')
 			}
 		})
 		req.addEventListener('error', () => {
@@ -32,6 +29,10 @@ const resolveDbRequest = <T>(req: IDBRequest<T>): Promise<T> => {
 		req.addEventListener('success', () => accept(req.result))
 		req.addEventListener('error', () => reject(req.error))
 	})
+}
+
+const messageIdToDatabaseKey = (peer: string, msgId: number): IDBValidKey => {
+	return peer + '_' + msgId.toString().padStart(10, '0')
 }
 
 class Database {
@@ -84,17 +85,53 @@ class Database {
 		await resolveDbRequest(trans.objectStore('chats').put({peer, username}, peer))
 	}
 
-	async storeMessage(peer: string, msg: Omit<ChatMessage, 'id'>): Promise<void> {
+	async storeUnsentMessage(peer: string, msg: ChatMessage): Promise<void> {
+		await this.#ensureDbReady()
+		const trans = this.#db.transaction('unsentMessages', 'readwrite')
+
+		let ids = await resolveDbRequest<number[]>(trans.objectStore('unsentMessages').get(peer))
+		if (!ids) ids = []
+		if (ids.indexOf(msg.id) === -1) ids.push(msg.id)
+		await resolveDbRequest(trans.objectStore('unsentMessages').put(ids, peer))
+	}
+
+	async removeUnsentMessage(peer: string, msg: ChatMessage) {
+		await this.#ensureDbReady()
+		const trans = this.#db.transaction('unsentMessages', 'readwrite')
+
+		const ids = await resolveDbRequest<number[]>(trans.objectStore('unsentMessages').get(peer))
+		if (!ids)
+			return
+
+		const removeIdx = ids.indexOf(msg.id)
+		if (removeIdx !== -1) ids.splice(removeIdx, 1)
+		await resolveDbRequest(trans.objectStore('unsentMessages').put(ids, peer))
+	}
+
+	async getUnsentMessages(peer: string): Promise<ChatMessage[]> {
+		await this.#ensureDbReady()
+		const trans = this.#db.transaction(['unsentMessages', 'messages'], 'readonly')
+		const ids = await resolveDbRequest<number[]>(trans.objectStore('unsentMessages').get(peer))
+		if (!ids)
+			return []
+
+		const msgs = []
+		for (const id of ids)
+			msgs.push(await resolveDbRequest(trans.objectStore('messages').get(messageIdToDatabaseKey(peer, id))))
+
+		return msgs
+	}
+
+	async storeMessage(peer: string, msg: Omit<ChatMessage, 'id'>): Promise<ChatMessage> {
 		await this.#ensureDbReady()
 		const trans = this.#db.transaction(['messages', 'counters'], 'readwrite')
 		let counter = await resolveDbRequest<number>(trans.objectStore('counters').get(peer))
 		if (typeof counter !== 'number') counter = 0
 
-		await resolveDbRequest(trans.objectStore('messages').put(
-			{...msg, id: counter},
-			peer + '_' + counter.toString().padStart(10, '0')),
-		)
+		const msgWithId = {...msg, id: counter}
+		await resolveDbRequest(trans.objectStore('messages').put(msgWithId, messageIdToDatabaseKey(peer, counter)))
 		await resolveDbRequest(trans.objectStore('counters').put(counter + 1, peer))
+		return msgWithId
 	}
 }
 

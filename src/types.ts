@@ -31,7 +31,14 @@ export type PeerHelloAckPacket = {
 
 export type PeerMessagePacket = {
 	type: 'msg'
+	ackId: number
 	text: string
+	time: number
 }
 
-export type PeerPacket = PeerHelloPacket | PeerHelloAckPacket | PeerMessagePacket
+export type PeerMessageAckPacket = {
+	type: 'msgAck'
+	ackId: number
+}
+
+export type PeerPacket = PeerHelloPacket | PeerHelloAckPacket | PeerMessagePacket | PeerMessageAckPacket

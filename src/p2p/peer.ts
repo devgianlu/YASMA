@@ -1,5 +1,5 @@
 import {DataConnection, Peer} from 'peerjs'
-import {PeerPacket} from '../types'
+import {PeerHelloAckPacket, PeerHelloPacket, PeerMessageAckPacket, PeerMessagePacket, PeerPacket} from '../types'
 
 class PeerError extends Error {
 	constructor(msg: string)
@@ -10,24 +10,194 @@ class PeerError extends Error {
 	}
 }
 
+type OnMessageListener = (peer: string, text: string, time: number) => Promise<boolean>
+type OnPeerListener = (peer: string) => Promise<void>
+
+type PacketListener<Type extends PeerPacket['type']> = (data: Readonly<PeerPacket & { type: Type }>) => void | Promise<void>
+
+const TIMEOUT_MS = 5000
+
+class ConnManager {
+	readonly #conn: DataConnection
+	readonly #listeners: Partial<{ [Type in PeerPacket['type']]: [PacketListener<Type>, boolean][] }> = {}
+	readonly #onmessage: OnMessageListener
+	#username: string
+
+	constructor(conn: DataConnection, onmessage: OnMessageListener) {
+		this.#conn = conn
+		this.#onmessage = onmessage
+
+		this.on('msg', async (data: PeerMessagePacket) => {
+			try {
+				// Try to notify listener
+				if (!await this.#onmessage(this.#conn.peer, data.text, data.time)) {
+					this.#log(`refusing to ack message ${data.ackId}`)
+					return
+				}
+			} catch (err) {
+				// If we fail to handle it, don't ack so that the message will be sent again
+				this.#log(`failed handling message ${data.ackId}: ${err}`)
+				return
+			}
+
+			this.#log(`sending message ack for ${data.ackId}`)
+			await this.send({type: 'msgAck', ackId: data.ackId})
+		})
+	}
+
+	on<Type extends PeerPacket['type']>(type: Type, func: PacketListener<Type>) {
+		this.#listeners[type] = (this.#listeners[type] || []).concat([[func, false]])
+	}
+
+	once<Type extends PeerPacket['type']>(type: Type, func: PacketListener<Type>) {
+		this.#listeners[type] = (this.#listeners[type] || []).concat([[func, true]])
+	}
+
+	off<Type extends PeerPacket['type']>(type: Type, func: PacketListener<Type>) {
+		this.#listeners[type] = (this.#listeners[type] || []).filter(([fn]) => fn !== func)
+	}
+
+	#emit(data: PeerPacket) {
+		const listeners: [PacketListener<typeof data.type>, boolean][] = this.#listeners[data.type] || []
+		for (let i = listeners.length - 1; i >= 0; i--) {
+			const [fn, once] = listeners[i]
+			void fn(data)
+			if (once) listeners.splice(i, 1)
+		}
+	}
+
+	async handshakeIncoming(localUsername: string): Promise<string> {
+		return new Promise((accept, reject) => {
+			const timeout = setTimeout(() => {
+				this.off('hello', onHello)
+				this.#conn.close()
+				this.#log('handshake failed: timeout')
+				reject(new PeerError('handshake failed: timeout'))
+			}, TIMEOUT_MS)
+
+			const onHello = async (data: PeerHelloPacket) => {
+				this.#log(`received hello from ${data.username}`)
+				clearTimeout(timeout)
+
+				await this.send({type: 'helloAck', username: localUsername})
+				accept(this.#username = data.username)
+			}
+			this.once('hello', onHello)
+
+			// start receiving packets only **after** we setup the listener
+			this.#startReceive()
+		})
+	}
+
+	async handshakeOutgoing(localUsername: string): Promise<string> {
+		const promise = new Promise<string>((accept, reject) => {
+			const timeout = setTimeout(() => {
+				this.off('helloAck', onAck)
+				this.#conn.close()
+				this.#log('handshake failed: timeout')
+				reject(new PeerError('handshake failed: timeout'))
+			}, TIMEOUT_MS)
+
+			const onAck = (data: PeerHelloAckPacket) => {
+				this.#log(`received hello ack from ${data.username}`)
+				clearTimeout(timeout)
+				accept(this.#username = data.username)
+			}
+			this.once('helloAck', onAck)
+
+			// start receiving packets only **after** we setup the listener
+			this.#startReceive()
+		})
+		await this.send({type: 'hello', username: localUsername})
+		return await promise
+	}
+
+	#startReceive() {
+		this.#conn.on('data', (data: PeerPacket) => {
+			if (!('type' in data))
+				return
+
+			this.#log(`received '${data.type}' packet`)
+			this.#emit(data)
+		})
+	}
+
+	async sendMessage(text: string, time: number) {
+		const ackId = Math.floor(Math.random() * 4294967296)
+
+		const promise = new Promise<void>((accept, reject) => {
+			const timeout = setTimeout(() => {
+				this.off('msgAck', onAck)
+				reject(new PeerError(`failed sending message ${ackId} to ${this.peerId}, timeout`))
+			}, 5000)
+
+			const onAck = (data: PeerMessageAckPacket) => {
+				if (data.ackId !== ackId)
+					return
+
+				clearTimeout(timeout)
+				this.off('msgAck', onAck)
+				accept()
+			}
+			this.on('msgAck', onAck)
+		})
+		await this.send({type: 'msg', text, time, ackId})
+		return await promise
+	}
+
+	#log(msg: string): void {
+		console.log('[P2P]', `[${this.#conn.peer}]`, msg)
+	}
+
+	async send(packet: PeerPacket, chunked = false): Promise<void> {
+		return new Promise((accept) => {
+			this.#log(`sending '${packet.type}' packet, open: ${this.#conn.open}`)
+			if (this.#conn.open) {
+				this.#conn.send(packet, chunked)
+				accept()
+				return
+			}
+
+			this.#conn.once('open', () => {
+				this.#conn.send(packet, chunked)
+				accept()
+			})
+		})
+	}
+
+	close() {
+		this.#conn.close()
+		for (const listeners of Object.values(this.#listeners))
+			listeners.length = 0
+	}
+
+	get username(): string {
+		return this.#username
+	}
+
+	get peerId(): string {
+		return this.#conn.peer
+	}
+}
+
 class PeerManager {
-	readonly #conns: { [key: string]: [DataConnection, string] } = {}
+	readonly #conns: { [key: string]: ConnManager } = {}
 	readonly #connectToErrors: { [key: string]: (err: Error) => void } = {}
 	#peer: Peer
 	#id: string
 	#username: string
-	#onmessage: (peer: string, text: string) => Promise<void>
+	#onmessage: OnMessageListener
+	#onpeer: OnPeerListener
 
-	#log(msg: string): void
-	#log(conn: DataConnection, msg: string): void
-	#log(msgOrConn: DataConnection | string, msg?: string): void {
-		if (typeof msgOrConn == 'string') console.log('[P2P]', msgOrConn)
-		else console.log('[P2P]', `[${msgOrConn.peer}]`, msg)
+	#log(msg: string): void {
+		console.log('[P2P]', msg)
 	}
 
-	async init(id: string, username: string) {
+	async init(id: string, username: string, onmessage: OnMessageListener, onpeer: OnPeerListener) {
 		this.#id = id
 		this.#username = username
+		this.#onmessage = onmessage
+		this.#onpeer = onpeer
 		this.#peer = new Peer(`yasma_${id}`, {debug: 2})
 		this.#peer.on('connection', this.#handleConnection, this)
 		await new Promise<void>((accept, reject) => {
@@ -48,7 +218,7 @@ class PeerManager {
 		})
 
 		this.#peer.on('error', err => {
-			// hackish way to recover a Peer#connect(string) call failing
+			// hackish way to detect a Peer#connect(string) call failing
 			if ('type' in err && err.type === 'peer-unavailable') {
 				const match = err.message.match(/^Could not connect to peer (yasma_.*)$/)
 				if (match && this.#connectToErrors[match[1]])
@@ -57,109 +227,43 @@ class PeerManager {
 		})
 	}
 
-	async #handleConnection(conn: DataConnection) {
-		this.#log(conn, 'received connection')
+	#handleConnection(conn: DataConnection) {
+		this.#log(`incoming connection: ${conn.peer}`)
 
-		const disconnectTimeout = setTimeout(() => {
-			if (!conn.open)
-				return
+		// TODO: check if peer already connected (?)
 
-			conn.close()
-			this.#log(conn, 'terminated connection for timeout')
-		}, 5000)
-
-		conn.once('data', (data: PeerPacket) => {
-			if (data.type !== 'hello') {
-				conn.close()
-				this.#log(conn, 'terminated connection for invalid packet')
-				return
-			}
-
-			this.#log(conn, `received hello packet: ${data.username}`)
-			conn.send({type: 'helloAck', username: this.#username})
-
-			clearTimeout(disconnectTimeout)
-			conn.on('data', this.#handleData.bind(this, conn), this)
-			conn.on('error', () => {
-				// TODO
+		const connManager = new ConnManager(conn, this.#onmessage)
+		this.#conns[conn.peer] = connManager
+		connManager.handshakeIncoming(this.#username)
+			.then(() => this.#onpeer(conn.peer))
+			.catch(err => {
+				this.#log(`failed incoming handshake from ${conn.peer}: ${err.message}`)
 			})
-		})
 	}
 
-	async #handleData(conn: DataConnection, data: PeerPacket) {
-		this.#log(conn, `received ${data.type} packet`)
-
-		if (data.type == 'msg') {
-			if (this.#onmessage) await this.#onmessage(conn.peer, data.text)
-		}
-	}
-
-	set onmessage(callback: (peer: string, text: string) => Promise<void>) {
-		this.#onmessage = callback
-	}
-
-	async connectTo(id: string, reconnect = false): Promise<[string, string]> {
+	async connectTo(peer: string): Promise<string> {
 		if (!this.#peer)
 			throw new PeerError('peer not ready')
-		if (!id.startsWith('yasma_'))
+		if (!peer.startsWith('yasma_'))
 			throw new PeerError('invalid peer id')
 
-		// Try to reuse a previously connected DataConnection
-		// There is a small race condition here if #connectTo is called again before the connection is complete...
-		if (this.#conns[id]) {
-			const [conn, username] = this.#conns[id]
-			if (conn.peer !== id)
-				throw new PeerError('invalid connection with wrong peer')
+		// TODO: check if peer already connected (?)
 
-			if (reconnect) {
-				// Reconnecting, discard connection and continue
-				conn.close()
-				delete this.#conns[id]
-			} else if (conn.open) {
-				// Not reconnecting and connection open, sounds good!
-				return [id, username]
-			} else {
-				// Just remove it and continue
-				delete this.#conns[id]
-			}
-		}
-
-		const conn = this.#peer.connect(id)
-		return new Promise<[string, string]>((accept, reject) => {
-			this.#connectToErrors[id] = err => {
-				delete this.#connectToErrors[id]
-				reject(err)
-			}
-
-			conn.once('data', (data: PeerPacket) => {
-				if (data.type !== 'helloAck') {
-					reject(new PeerError(conn, 'invalid packet'))
-					return
-				}
-
-				this.#log(conn, `received hello ack packet: ${data.username}`)
-				this.#conns[id] = [conn, data.username]
-				delete this.#connectToErrors[id]
-				accept([conn.peer, data.username])
-			})
-			conn.once('error', err => {
-				delete this.#connectToErrors[id]
-				reject(err)
-			})
-			conn.once('open', () => {
-				conn.send({type: 'hello', username: this.#username})
-				this.#log(conn, 'sent hello packet')
-			})
-		})
+		const connManager = new ConnManager(this.#peer.connect(peer), this.#onmessage)
+		this.#conns[peer] = connManager
+		const username = await connManager.handshakeOutgoing(this.#username)
+		await this.#onpeer(peer)
+		return username
 	}
 
-	async sendMessage(peer: string, text: string) {
-		if (!this.#conns[peer])
-			throw new PeerError(`unknown peer: ${peer}`)
+	async sendMessage(peer: string, text: string, time: number) {
+		const conn = this.#conns[peer]
+		if (!conn) {
+			// TODO: try to connect
+			throw new PeerError('unknown peer')
+		}
 
-		const [conn] = this.#conns[peer]
-		conn.send({type: 'msg', text})
-		// TODO: ack
+		return await conn.sendMessage(text, time)
 	}
 
 	get peer(): string {
@@ -167,6 +271,11 @@ class PeerManager {
 			throw new PeerError('peer not ready')
 
 		return this.#id
+	}
+
+	deinit() {
+		for (const conn of Object.values(this.#conns)) conn.close()
+		this.#peer.destroy()
 	}
 }
 

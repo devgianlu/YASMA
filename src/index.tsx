@@ -3,7 +3,7 @@ import ReactDOM from 'react-dom/client'
 import Router from './Router'
 
 import 'bootstrap/dist/css/bootstrap.min.css'
-import {init} from './p2p'
+import {deinit, init} from './p2p'
 
 const root = ReactDOM.createRoot(
 	document.getElementById('root') as HTMLElement
@@ -16,4 +16,8 @@ root.render(
 
 window.addEventListener('load', () => {
 	void init()
+})
+
+window.addEventListener('unload', () => {
+	void deinit()
 })

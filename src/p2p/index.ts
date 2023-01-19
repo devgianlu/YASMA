@@ -19,29 +19,46 @@ const getSelfUsername = (): string => {
 }
 
 export const init = async () => {
-	await manager.init(getSelfId(), getSelfUsername())
+	await manager.init(
+		getSelfId(),
+		getSelfUsername(),
+		async (peer, text, time): Promise<boolean> => {
+			if (!await db.hasChat(peer)) {
+				console.log('message from unknown user') // FIXME
+				return false
+			}
 
-	manager.onmessage = async (peer, text) => {
-		if (!await db.hasChat(peer)) {
-			console.log('message from unknown user') // FIXME
-			return
-		}
+			await db.storeMessage(peer, {text, time, read: false, own: false})
+			return true
+		},
+		async (peer) => {
+			const unsent = await db.getUnsentMessages(peer)
+			console.log(unsent, peer)
+			if (unsent.length === 0)
+				return
 
-		await db.storeMessage(peer, {
-			text,
-			read: false,
-			own: false,
-			time: Date.now() /* TODO: time should be sent with message */
+			console.log(`trying to flush ${unsent.length} messages`)
+			for (const msg of unsent) {
+				try {
+					await manager.sendMessage(peer, msg.text, msg.time)
+					await db.removeUnsentMessage(peer, msg)
+				} catch (err) {
+					// ignore
+				}
+			}
 		})
-	}
 
-	// Try to connect to all know peers asynchronously
-	for (const id of await db.getChatIds())
-		manager.connectTo(id as string).catch(() => console.error(`failed connecting to peer ${id}`))
+	// Try to connect to all known peers asynchronously
+	for (const peerId of await db.getChatIds())
+		manager.connectTo(peerId).catch(() => console.error(`failed connecting to peer ${peerId}`))
 }
 
-export const startChat = async (id: string): Promise<Chat> => {
-	const [peer, username] = await manager.connectTo(id)
+export const deinit = async () => {
+	manager.deinit()
+}
+
+export const startChat = async (peer: string): Promise<Chat> => {
+	const username = await manager.connectTo(peer)
 	if (await db.hasChat(peer))
 		return db.getChat(peer)
 
@@ -50,6 +67,14 @@ export const startChat = async (id: string): Promise<Chat> => {
 }
 
 export const sendChatMessage = async (peer: string, text: string): Promise<void> => {
-	await manager.sendMessage(peer, text)
-	await db.storeMessage(peer, {text, read: true, own: true, time: Date.now()})
+	const time = Date.now()
+	const msg = await db.storeMessage(peer, {text, time, read: true, own: true})
+	await db.storeUnsentMessage(peer, msg)
+
+	try {
+		await manager.sendMessage(peer, text, time)
+		await db.removeUnsentMessage(peer, msg)
+	} catch (err) {
+		console.error(`failed sending message to ${peer} (${err.message}), will retry`)
+	}
 }
