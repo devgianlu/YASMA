@@ -11,7 +11,7 @@ class PeerError extends Error {
 }
 
 type OnMessageListener = (peer: string, text: string, time: number) => Promise<boolean>
-type OnPeerListener = (peer: string) => Promise<void>
+type OnPeerListener = (peer: string, username: string) => Promise<void>
 
 type PacketListener<Type extends PeerPacket['type']> = (data: Readonly<PeerPacket & { type: Type }>) => void
 
@@ -264,7 +264,7 @@ class PeerManager {
 		const connManager = new ConnManager(conn, this.#onmessage)
 		this.#conns[conn.peer] = connManager
 		connManager.handshakeIncoming(this.#username)
-			.then(() => this.#onpeer(conn.peer))
+			.then(username => this.#onpeer(conn.peer, username))
 			.catch(err => {
 				this.#log(`failed incoming handshake from ${conn.peer}: ${err.message}`)
 			})
@@ -281,7 +281,7 @@ class PeerManager {
 		const connManager = new ConnManager(this.#peer.connect(peer), this.#onmessage)
 		this.#conns[peer] = connManager
 		const username = await connManager.handshakeOutgoing(this.#username)
-		await this.#onpeer(peer)
+		await this.#onpeer(peer, username)
 		return username
 	}
 

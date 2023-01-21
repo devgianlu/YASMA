@@ -31,7 +31,12 @@ export const init = async () => {
 			await db.storeMessage(peer, {text, time, read: false, own: false})
 			return true
 		},
-		async (peer) => {
+		async (peer, username) => {
+			if (!await db.hasChat(peer)) {
+				await db.createChat(peer, username)
+				return
+			}
+
 			const unsent = await db.getUnsentMessages(peer)
 			if (unsent.length === 0)
 				return
