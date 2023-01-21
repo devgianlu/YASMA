@@ -1,9 +1,9 @@
-import React, {FunctionComponent} from 'react';
-import {Routes} from 'react-router';
-import {BrowserRouter, Route} from 'react-router-dom';
+import React, {FunctionComponent} from 'react'
+import {Routes} from 'react-router'
+import {BrowserRouter, Route} from 'react-router-dom'
 
-import Homepage from './pages/Homepage';
-import {Container} from 'react-bootstrap';
+import Homepage from './pages/homapage'
+import {Container} from 'react-bootstrap'
 
 const Router: FunctionComponent = () => {
 	return (
@@ -14,7 +14,7 @@ const Router: FunctionComponent = () => {
 				</Routes>
 			</BrowserRouter>
 		</Container>
-	);
-};
+	)
+}
 
-export default Router;
+export default Router

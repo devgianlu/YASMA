@@ -1,5 +1,5 @@
 import * as React from 'react'
-import {ChatItem} from '../types'
+import {ChatItem} from '../../types'
 
 export const HomepageContext = React.createContext<{
 	current?: ChatItem,

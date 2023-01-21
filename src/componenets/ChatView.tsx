@@ -1,5 +1,5 @@
 import React, {FunctionComponent, useCallback, useContext, useEffect, useState} from 'react'
-import {HomepageContext} from '../pages/HomepageContext'
+import {HomepageContext} from '../pages/homapage/context'
 import {Chat} from '../types'
 import {Button, Form, InputGroup} from 'react-bootstrap'
 import {sendChatMessage} from '../p2p'

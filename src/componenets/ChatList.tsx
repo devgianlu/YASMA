@@ -1,19 +1,21 @@
 import React, {FunctionComponent, useContext, useEffect, useState} from 'react'
 import {Badge, ListGroup} from 'react-bootstrap'
-import {HomepageContext} from '../pages/HomepageContext'
+import {HomepageContext} from '../pages/homapage/context'
 import {ChatItem} from '../types'
-import {startChat} from '../p2p'
 import db from '../p2p/db'
+import AddContactModal from './AddContactModal'
 
 const ChatList: FunctionComponent = () => {
 	const ctx = useContext(HomepageContext)
-
+	const [addContactShow, setAddContactShow] = useState(false)
 	const [chats, setChats] = useState<ChatItem[]>([])
+
 	useEffect(() => {
 		db.getChats().then(setChats)
 	}, [])
 
-	return (
+	return (<>
+		<AddContactModal show={addContactShow} onHide={() => setAddContactShow(false)}/>
 		<ListGroup as="ol" variant="flush">
 			{chats.map(x => (
 				<ListGroup.Item
@@ -39,18 +41,12 @@ const ChatList: FunctionComponent = () => {
 				as="li" action key="__add__"
 				className="text-center"
 				style={{cursor: 'pointer'}}
-				onClick={() => {
-					const id = prompt('other id')
-					if (!id)
-						return
-
-					startChat('yasma_' + id) // TODO
-				}}
+				onClick={() => setAddContactShow(true)}
 			>
 				Add contact
 			</ListGroup.Item>
 		</ListGroup>
-	)
+	</>)
 }
 
 export default ChatList

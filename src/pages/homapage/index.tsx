@@ -1,10 +1,10 @@
 import * as React from 'react'
 import {Col, Row} from 'react-bootstrap'
-import ChatList from '../componenets/ChatList'
-import ChatView from '../componenets/ChatView'
-import {HomepageContext} from './HomepageContext'
+import ChatList from '../../componenets/ChatList'
+import ChatView from '../../componenets/ChatView'
+import {HomepageContext} from './context'
 import {FunctionComponent, useState} from 'react'
-import {ChatItem} from '../types'
+import {ChatItem} from '../../types'
 
 const Homepage: FunctionComponent = () => {
 	const [current, setCurrent] = useState<ChatItem>()
