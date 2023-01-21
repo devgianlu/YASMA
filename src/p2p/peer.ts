@@ -13,7 +13,7 @@ class PeerError extends Error {
 type OnMessageListener = (peer: string, text: string, time: number) => Promise<boolean>
 type OnPeerListener = (peer: string) => Promise<void>
 
-type PacketListener<Type extends PeerPacket['type']> = (data: Readonly<PeerPacket & { type: Type }>) => void | Promise<void>
+type PacketListener<Type extends PeerPacket['type']> = (data: Readonly<PeerPacket & { type: Type }>) => void
 
 const TIMEOUT_MS = 5000
 
@@ -27,21 +27,21 @@ class ConnManager {
 		this.#conn = conn
 		this.#onmessage = onmessage
 
-		this.on('msg', async (data: PeerMessagePacket) => {
-			try {
-				// Try to notify listener
-				if (!await this.#onmessage(this.#conn.peer, data.text, data.time)) {
-					this.#log(`refusing to ack message ${data.ackId}`)
-					return
-				}
-			} catch (err) {
-				// If we fail to handle it, don't ack so that the message will be sent again
-				this.#log(`failed handling message ${data.ackId}: ${err}`)
-				return
-			}
+		this.on('msg', (data: PeerMessagePacket) => {
+			this.#onmessage(this.#conn.peer, data.text, data.time)
+				.then(async ok => {
+					if (!ok) {
+						this.#log(`refusing to ack message ${data.ackId}`)
+						return
+					}
 
-			this.#log(`sending message ack for ${data.ackId}`)
-			await this.send({type: 'msgAck', ackId: data.ackId})
+					this.#log(`sending message ack for ${data.ackId}`)
+					await this.send({type: 'msgAck', ackId: data.ackId})
+				})
+				.catch(err => {
+					this.#log(`failed handling message ${data.ackId}: ${err}`)
+					return
+				})
 		})
 	}
 
@@ -61,12 +61,17 @@ class ConnManager {
 		const listeners: [PacketListener<typeof data.type>, boolean][] = this.#listeners[data.type] || []
 		for (let i = listeners.length - 1; i >= 0; i--) {
 			const [fn, once] = listeners[i]
-			void fn(data)
+			try {
+				fn(data)
+			} catch (err) {
+				this.#log(`unhandled listener exception: ${err.message}`)
+			}
 			if (once) listeners.splice(i, 1)
 		}
 	}
 
 	async handshakeIncoming(localUsername: string): Promise<string> {
+		await this.#waitOpen()
 		return new Promise((accept, reject) => {
 			const timeout = setTimeout(() => {
 				this.off('hello', onHello)
@@ -75,12 +80,13 @@ class ConnManager {
 				reject(new PeerError('handshake failed: timeout'))
 			}, TIMEOUT_MS)
 
-			const onHello = async (data: PeerHelloPacket) => {
+			const onHello = (data: PeerHelloPacket) => {
 				this.#log(`received hello from ${data.username}`)
 				clearTimeout(timeout)
 
-				await this.send({type: 'helloAck', username: localUsername})
-				accept(this.#username = data.username)
+				this.send({type: 'helloAck', username: localUsername})
+					.then(() => accept(this.#username = data.username))
+					.catch(reject)
 			}
 			this.once('hello', onHello)
 
@@ -90,9 +96,11 @@ class ConnManager {
 	}
 
 	async handshakeOutgoing(localUsername: string): Promise<string> {
-		const promise = new Promise<string>((accept, reject) => {
+		await this.#waitOpen()
+		return new Promise<string>((accept, reject) => {
 			const timeout = setTimeout(() => {
 				this.off('helloAck', onAck)
+				this.#conn.off('error', onError)
 				this.#conn.close()
 				this.#log('handshake failed: timeout')
 				reject(new PeerError('handshake failed: timeout'))
@@ -101,15 +109,44 @@ class ConnManager {
 			const onAck = (data: PeerHelloAckPacket) => {
 				this.#log(`received hello ack from ${data.username}`)
 				clearTimeout(timeout)
+				this.#conn.off('error', onError)
 				accept(this.#username = data.username)
 			}
 			this.once('helloAck', onAck)
 
+			const onError = (err: Error) => {
+				clearTimeout(timeout)
+				this.off('helloAck', onAck)
+				reject(err)
+			}
+			this.#conn.once('error', onError)
+
 			// start receiving packets only **after** we setup the listener
 			this.#startReceive()
+
+			this.send({type: 'hello', username: localUsername}).catch(reject)
 		})
-		await this.send({type: 'hello', username: localUsername})
-		return await promise
+	}
+
+	#waitOpen(): Promise<void> {
+		return new Promise<void>((accept, reject) => {
+			if (this.#conn.open) {
+				accept()
+				return
+			}
+
+			const onOpen = () => {
+				clearTimeout(timeout)
+				accept()
+			}
+
+			const timeout = setTimeout(() => {
+				this.#conn.off('open', onOpen)
+				reject(new PeerError('failed opening connection, timeout'))
+			}, TIMEOUT_MS)
+
+			this.#conn.once('open', onOpen)
+		})
 	}
 
 	#startReceive() {
@@ -152,16 +189,8 @@ class ConnManager {
 	async send(packet: PeerPacket, chunked = false): Promise<void> {
 		return new Promise((accept) => {
 			this.#log(`sending '${packet.type}' packet, open: ${this.#conn.open}`)
-			if (this.#conn.open) {
-				this.#conn.send(packet, chunked)
-				accept()
-				return
-			}
-
-			this.#conn.once('open', () => {
-				this.#conn.send(packet, chunked)
-				accept()
-			})
+			this.#conn.send(packet, chunked)
+			accept()
 		})
 	}
 

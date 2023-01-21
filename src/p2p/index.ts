@@ -33,7 +33,6 @@ export const init = async () => {
 		},
 		async (peer) => {
 			const unsent = await db.getUnsentMessages(peer)
-			console.log(unsent, peer)
 			if (unsent.length === 0)
 				return
 
