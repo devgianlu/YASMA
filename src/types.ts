@@ -1,3 +1,5 @@
+import {DataConnection} from 'peerjs'
+
 export type ChatItem = {
 	peer: string
 	username: string
@@ -40,3 +42,15 @@ export type PeerMessageAckPacket = {
 }
 
 export type PeerPacket = PeerHelloPacket | PeerHelloAckPacket | PeerMessagePacket | PeerMessageAckPacket
+
+export type OnMessageListener = (peer: string, username: string, text: string, time: number) => void
+export type OnPeerListener = (peer: string, username: string, online: boolean) => void
+
+export class PeerError extends Error {
+	constructor(msg: string)
+	constructor(conn: DataConnection, msg: string)
+	constructor(msgOrConn: DataConnection | string, msg?: string) {
+		if (typeof msgOrConn == 'string') super(msgOrConn)
+		else super(`[${msgOrConn.peer}] ${msg}`)
+	}
+}

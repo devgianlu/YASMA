@@ -19,38 +19,39 @@ const getSelfUsername = (): string => {
 }
 
 export const init = async () => {
-	await manager.init(
-		getSelfId(),
-		getSelfUsername(),
-		async (peer, text, time): Promise<boolean> => {
-			if (!await db.hasChat(peer)) {
-				console.log('message from unknown user') // FIXME
-				return false
-			}
+	await manager.init(getSelfId(), getSelfUsername())
 
-			await db.storeMessage(peer, {text, time, read: false, own: false})
-			return true
-		},
-		async (peer, username) => {
-			if (!await db.hasChat(peer)) {
-				await db.createChat(peer, username)
-				return
-			}
+	manager.on('peer', ({peer, username, online}) => {
+		if (!online)
+			return
 
-			const unsent = await db.getUnsentMessages(peer)
-			if (unsent.length === 0)
-				return
-
-			console.log(`trying to flush ${unsent.length} messages`)
-			for (const msg of unsent) {
-				try {
-					await manager.sendMessage(peer, msg.text, msg.time)
-					await db.removeUnsentMessage(peer, msg)
-				} catch (err) {
-					// ignore
+		db.hasChat(peer)
+			.then(async ok => {
+				if (!ok) {
+					await db.createChat(peer, username)
+					return
 				}
-			}
-		})
+
+				const unsent = await db.getUnsentMessages(peer)
+				if (unsent.length === 0)
+					return
+
+				console.log(`trying to flush ${unsent.length} messages`)
+				for (const msg of unsent) {
+					try {
+						await manager.sendMessage(peer, msg.text, msg.time)
+						await db.removeUnsentMessage(peer, msg)
+					} catch (err) {
+						// ignore
+					}
+				}
+			})
+			.catch(err => console.error(`failed handling peer: ${err.message}`))
+	})
+	manager.on('message', ({peer, text, time}) => {
+		db.storeMessage(peer, {text, time, read: false, own: false})
+			.catch(err => console.error(`failed storing message: ${err.message}`))
+	})
 
 	// Try to connect to all known peers asynchronously
 	for (const peerId of await db.getChatIds())
