@@ -1,8 +1,6 @@
 export type ChatItem = {
 	peer: string
 	username: string
-	lastMessage?: string
-	unreadMessages: number
 }
 
 export type ChatMessage = {

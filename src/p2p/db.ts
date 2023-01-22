@@ -31,12 +31,60 @@ const resolveDbRequest = <T>(req: IDBRequest<T>): Promise<T> => {
 	})
 }
 
+const iterateCursor = async function* (req: IDBRequest<IDBCursorWithValue>): AsyncGenerator<IDBCursorWithValue> {
+	while (true) {
+		const cursor = await resolveDbRequest<IDBCursorWithValue | null>(req)
+		if (!cursor)
+			break
+
+		yield cursor
+		cursor.continue()
+	}
+}
+
+const iterateCursorValue = async function* <T>(req: IDBRequest<IDBCursorWithValue>): AsyncGenerator<T> {
+	while (true) {
+		const cursor = await resolveDbRequest<IDBCursorWithValue | null>(req)
+		if (!cursor)
+			break
+
+		yield cursor.value
+		cursor.continue()
+	}
+}
+
 const messageIdToDatabaseKey = (peer: string, msgId: number): IDBValidKey => {
 	return peer + '_' + msgId.toString().padStart(10, '0')
 }
 
+type DbEvent = {
+	type: 'chats'
+}
+
+type DbListener<Type extends DbEvent['type']> = (data: Readonly<DbEvent & { type: Type }>) => void
+
 class Database {
 	#db: IDBDatabase
+	readonly #listeners: Partial<{ [Type in DbEvent['type']]: DbListener<Type>[] }> = {}
+
+	on<Type extends DbEvent['type']>(type: Type, func: DbListener<Type>) {
+		this.#listeners[type] = (this.#listeners[type] || []).concat([func])
+	}
+
+	off<Type extends DbEvent['type']>(type: Type, func: DbListener<Type>) {
+		this.#listeners[type] = (this.#listeners[type] || []).filter(fn => fn !== func)
+	}
+
+	#emit(data: DbEvent) {
+		const listeners: DbListener<typeof data.type>[] = this.#listeners[data.type] || []
+		listeners.forEach(fn => {
+			try {
+				fn(data)
+			} catch (err) {
+				console.error(`unhandled listener exception: ${err.message}`)
+			}
+		})
+	}
 
 	async #ensureDbReady() {
 		if (this.#db)
@@ -63,6 +111,32 @@ class Database {
 		return await resolveDbRequest(trans.objectStore('chats').count(peer)) > 0
 	}
 
+	async getLastMessage(peer: string): Promise<ChatMessage> {
+		const trans = this.#db.transaction('messages', 'readonly')
+		const messages = await iterateCursorValue<ChatMessage>(trans.objectStore('messages').openCursor(IDBKeyRange.bound(peer + '_0', peer + '_9'), 'prev'))
+		return (await messages.next()).value
+	}
+
+	async resetUnreadMessages(peer: string): Promise<void> {
+		const trans = this.#db.transaction('messages', 'readwrite')
+		for await (const cursor of iterateCursor(trans.objectStore('messages').openCursor(IDBKeyRange.bound(peer + '_0', peer + '_9'), 'prev'))) {
+			if (cursor.value.read && !cursor.value.own)
+				break
+
+			cursor.update({...cursor.value, read: true})
+		}
+	}
+
+	async getUnreadMessagesCount(peer: string): Promise<number> {
+		const trans = this.#db.transaction('messages', 'readonly')
+		let count = 0
+		for await (const item of iterateCursorValue<ChatMessage>(trans.objectStore('messages').openCursor(IDBKeyRange.bound(peer + '_0', peer + '_9'), 'prev'))) {
+			if (!item.read) count++
+			else if (!item.own) break
+		}
+		return count
+	}
+
 	async getChat(peer: string): Promise<Chat> {
 		await this.#ensureDbReady()
 		const trans = this.#db.transaction(['chats', 'messages'], 'readonly')
@@ -83,6 +157,7 @@ class Database {
 		await this.#ensureDbReady()
 		const trans = this.#db.transaction('chats', 'readwrite')
 		await resolveDbRequest(trans.objectStore('chats').put({peer, username}, peer))
+		this.#emit({type: 'chats'})
 	}
 
 	async storeUnsentMessage(peer: string, msg: ChatMessage): Promise<void> {

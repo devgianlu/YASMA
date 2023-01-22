@@ -28,11 +28,12 @@ const ChatMessage: FunctionComponent<{ msg: ChatMessage, readLine: boolean }> = 
 }
 
 const ChatBody: FunctionComponent<{ chat: Chat }> = ({chat}) => {
-	const lastElemRef = useRef<HTMLDivElement|null>()
+	const lastElemRef = useRef<HTMLDivElement | null>()
 
 	useEffect(() => {
 		lastElemRef.current?.scrollIntoView()
-	}, [])
+		void db.resetUnreadMessages(chat.peer)
+	}, [chat.peer])
 
 	let readLine = false
 	return (
