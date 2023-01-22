@@ -3,7 +3,7 @@ import {HomepageContext} from '../pages/homapage/context'
 import {Chat, ChatMessage} from '../types'
 import {Button, Container, Form, InputGroup} from 'react-bootstrap'
 import {sendChatMessage} from '../p2p'
-import db from '../p2p/db'
+import db, {MessageEvent} from '../p2p/db'
 import moment from 'moment'
 
 const ChatHeader: FunctionComponent<{ chat: Chat }> = ({chat}) => {
@@ -33,7 +33,7 @@ const ChatBody: FunctionComponent<{ chat: Chat }> = ({chat}) => {
 	useEffect(() => {
 		lastElemRef.current?.scrollIntoView()
 		void db.resetUnreadMessages(chat.peer)
-	}, [chat.peer])
+	}, [chat])
 
 	let readLine = false
 	return (
@@ -83,7 +83,16 @@ const ChatView: FunctionComponent = () => {
 			return
 		}
 
+		const onMessage = ({peer}: MessageEvent) => {
+			if (ctx.current.peer !== peer)
+				return
+
+			db.getChat(peer).then(setChat)
+		}
+		db.on('message', onMessage)
+
 		db.getChat(ctx.current.peer).then(setChat)
+		return () => db.off('message', onMessage)
 	}, [ctx.current])
 
 	const send = useCallback((text: string) => {
@@ -91,6 +100,7 @@ const ChatView: FunctionComponent = () => {
 			return
 
 		sendChatMessage(chat.peer, text)
+			.catch(err => console.error(`failed sending message: ${err.message}`))
 	}, [chat])
 
 	return (
