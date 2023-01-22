@@ -57,26 +57,35 @@ const messageIdToDatabaseKey = (peer: string, msgId: number): IDBValidKey => {
 	return peer + '_' + msgId.toString().padStart(10, '0')
 }
 
-type DbEvent = {
+export type ChatsEvent = {
 	type: 'chats'
 }
+export type ChatEvent = {
+	type: 'chat'
+	peer: string
+}
+export type MessageEvent = {
+	type: 'message'
+	peer: string
+}
+type Event = ChatsEvent | ChatEvent | MessageEvent
 
-type DbListener<Type extends DbEvent['type']> = (data: Readonly<DbEvent & { type: Type }>) => void
+type Listener<Type extends Event['type']> = (data: Readonly<Event & { type: Type }>) => void
 
 class Database {
 	#db: IDBDatabase
-	readonly #listeners: Partial<{ [Type in DbEvent['type']]: DbListener<Type>[] }> = {}
+	readonly #listeners: Partial<{ [Type in Event['type']]: Listener<Type>[] }> = {}
 
-	on<Type extends DbEvent['type']>(type: Type, func: DbListener<Type>) {
+	on<Type extends Event['type']>(type: Type, func: Listener<Type>) {
 		this.#listeners[type] = (this.#listeners[type] || []).concat([func])
 	}
 
-	off<Type extends DbEvent['type']>(type: Type, func: DbListener<Type>) {
+	off<Type extends Event['type']>(type: Type, func: Listener<Type>) {
 		this.#listeners[type] = (this.#listeners[type] || []).filter(fn => fn !== func)
 	}
 
-	#emit(data: DbEvent) {
-		const listeners: DbListener<typeof data.type>[] = this.#listeners[data.type] || []
+	#emit(data: Event) {
+		const listeners: Listener<typeof data.type>[] = this.#listeners[data.type] || []
 		listeners.forEach(fn => {
 			try {
 				fn(data)
@@ -125,6 +134,7 @@ class Database {
 
 			cursor.update({...cursor.value, read: true})
 		}
+		this.#emit({type: 'chat', peer})
 	}
 
 	async getUnreadMessagesCount(peer: string): Promise<number> {
@@ -206,6 +216,8 @@ class Database {
 		const msgWithId = {...msg, id: counter}
 		await resolveDbRequest(trans.objectStore('messages').put(msgWithId, messageIdToDatabaseKey(peer, counter)))
 		await resolveDbRequest(trans.objectStore('counters').put(counter + 1, peer))
+		this.#emit({type: 'message', peer})
+		this.#emit({type: 'chat', peer})
 		return msgWithId
 	}
 }

@@ -3,13 +3,13 @@ import {PeerError} from '../types'
 import {ConnManager} from './conn'
 
 
-type PeerEvent = {
+export type PeerEvent = {
 	type: 'peer'
 	peer: string
 	username: string
 	online: boolean
 }
-type MessageEvent = {
+export type MessageEvent = {
 	type: 'message'
 	peer: string
 	username: string
