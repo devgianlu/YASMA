@@ -121,12 +121,14 @@ class Database {
 	}
 
 	async getLastMessage(peer: string): Promise<ChatMessage> {
+		await this.#ensureDbReady()
 		const trans = this.#db.transaction('messages', 'readonly')
 		const messages = await iterateCursorValue<ChatMessage>(trans.objectStore('messages').openCursor(IDBKeyRange.bound(peer + '_0', peer + '_9'), 'prev'))
 		return (await messages.next()).value
 	}
 
 	async resetUnreadMessages(peer: string): Promise<void> {
+		await this.#ensureDbReady()
 		const trans = this.#db.transaction('messages', 'readwrite')
 		for await (const cursor of iterateCursor(trans.objectStore('messages').openCursor(IDBKeyRange.bound(peer + '_0', peer + '_9'), 'prev'))) {
 			if (cursor.value.read && !cursor.value.own)
@@ -138,6 +140,7 @@ class Database {
 	}
 
 	async getUnreadMessagesCount(peer: string): Promise<number> {
+		await this.#ensureDbReady()
 		const trans = this.#db.transaction('messages', 'readonly')
 		let count = 0
 		for await (const item of iterateCursorValue<ChatMessage>(trans.objectStore('messages').openCursor(IDBKeyRange.bound(peer + '_0', peer + '_9'), 'prev'))) {
@@ -168,6 +171,7 @@ class Database {
 		const trans = this.#db.transaction('chats', 'readwrite')
 		await resolveDbRequest(trans.objectStore('chats').put({peer, username}, peer))
 		this.#emit({type: 'chats'})
+		this.#emit({type: 'chat', peer})
 	}
 
 	async storeUnsentMessage(peer: string, msg: ChatMessage): Promise<void> {
@@ -191,6 +195,7 @@ class Database {
 		const removeIdx = ids.indexOf(msg.id)
 		if (removeIdx !== -1) ids.splice(removeIdx, 1)
 		await resolveDbRequest(trans.objectStore('unsentMessages').put(ids, peer))
+		this.#emit({type: 'chat', peer})
 	}
 
 	async getUnsentMessages(peer: string): Promise<ChatMessage[]> {

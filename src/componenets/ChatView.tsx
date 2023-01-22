@@ -3,7 +3,7 @@ import {HomepageContext} from '../pages/homapage/context'
 import {Chat, ChatMessage} from '../types'
 import {Button, Container, Form, InputGroup} from 'react-bootstrap'
 import {sendChatMessage} from '../p2p'
-import db, {MessageEvent} from '../p2p/db'
+import db, {ChatEvent, MessageEvent} from '../p2p/db'
 import moment from 'moment'
 
 const ChatHeader: FunctionComponent<{ chat: Chat }> = ({chat}) => {
@@ -15,32 +15,53 @@ const ChatHeader: FunctionComponent<{ chat: Chat }> = ({chat}) => {
 	)
 }
 
-const ChatMessage: FunctionComponent<{ msg: ChatMessage, readLine: boolean }> = ({msg, readLine}) => {
+const ChatMessage: FunctionComponent<{
+	msg: ChatMessage,
+	readLine: boolean,
+	unsent: boolean
+}> = ({msg, readLine, unsent}) => {
 	const classes = []
 	if (msg.own) classes.push('text-end')
 	else classes.push('text-start')
 	if (readLine) classes.push('border-top border-primary')
 
 	return (<div className={classes.join(' ')}>
-		<div className="mb-0 lh-sm text-wrap text-break">{msg.text}</div>
+		<div className={'mb-0 lh-sm text-wrap text-break' + (unsent ? ' text-danger' : '')}>{msg.text}</div>
 		<small className="text-muted">{moment(msg.time).fromNow()}</small>
 	</div>)
 }
 
 const ChatBody: FunctionComponent<{ chat: Chat }> = ({chat}) => {
 	const lastElemRef = useRef<HTMLDivElement | null>()
+	const [unsentMessages, setUnsentMessages] = useState<number[]>([])
 
 	useEffect(() => {
 		lastElemRef.current?.scrollIntoView()
 		void db.resetUnreadMessages(chat.peer)
 	}, [chat])
 
+	useEffect(() => {
+		const onChat = ({peer}: ChatEvent) => {
+			if (peer !== chat.peer)
+				return
+
+			db.getUnsentMessages(chat.peer).then(x => setUnsentMessages(x.map(y => y.id)))
+		}
+		db.on('chat', onChat)
+
+		db.getUnsentMessages(chat.peer).then(x => setUnsentMessages(x.map(y => y.id)))
+
+		return () => db.off('chat', onChat)
+	}, [chat.peer])
+
 	let readLine = false
 	return (
 		<div style={{height: 0}} className="overflow-auto flex-grow-1 my-2">
 			<Container className="d-flex flex-column gap-2">
 				{chat.messages.map(x => {
-					const elem = <ChatMessage key={x.id} msg={x} readLine={!x.read && !readLine}/>
+					const elem = <ChatMessage
+						key={x.id} msg={x} readLine={!x.read && !readLine}
+						unsent={unsentMessages.includes(x.id)}/>
 					if (!x.read) readLine = true
 					return elem
 				})}
