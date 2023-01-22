@@ -1,5 +1,5 @@
 import * as React from 'react'
-import {FunctionComponent, useCallback, useState} from 'react'
+import {FunctionComponent, useCallback, useEffect, useState} from 'react'
 import {Button, Modal, ModalProps, Form, Spinner} from 'react-bootstrap'
 import {startChat} from '../p2p'
 
@@ -7,6 +7,15 @@ const AddContactModal: FunctionComponent<ModalProps> = (props) => {
 	const [state, setState] = useState<'PENDING' | 'CONNECTING' | 'ERROR' | 'SUCCESS'>('PENDING')
 	const [uuid, setUuid] = useState('')
 	const [username, setUsername] = useState('')
+
+	useEffect(() => {
+		if (!props.show)
+			return
+
+		setState('PENDING')
+		setUuid('')
+		setUsername('')
+	}, [props.show])
 
 	const addContact = useCallback(() => {
 		if (!uuid.match(/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/))
