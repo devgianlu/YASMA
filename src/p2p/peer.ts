@@ -149,6 +149,14 @@ class PeerManager {
 		for (const conn of Object.values(this.#conns)) conn.close()
 		this.#peer.destroy()
 	}
+
+	get username() {
+		return this.#username || ''
+	}
+
+	get peerId() {
+		return this.#peer && this.#peer.id || ''
+	}
 }
 
 

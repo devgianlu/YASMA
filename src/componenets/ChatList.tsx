@@ -72,9 +72,9 @@ const ChatList: FunctionComponent = () => {
 		return () => manager.off('peer', onPeer)
 	}, [online])
 
-	return (<>
+	return (<div className="d-flex flex-column h-100">
 		<AddContactModal show={addContactShow} onHide={() => setAddContactShow(false)}/>
-		<ListGroup as="ol" variant="flush">
+		<ListGroup as="ol" variant="flush" className="flex-grow-1 overflow-auto" style={{height: 0}}>
 			{chats.map(x => <ChatListItem key={x.peer} online={!!online[x.peer]} item={x}/>)}
 			<ListGroup.Item
 				as="li" action key="__add__"
@@ -85,7 +85,11 @@ const ChatList: FunctionComponent = () => {
 				Add contact
 			</ListGroup.Item>
 		</ListGroup>
-	</>)
+		<div className="bg-dark text-white p-2 text-center d-grid">
+			<small className="fw-bold">{manager.username}</small>
+			<small>{manager.peerId.replace('yasma_', '')}</small>
+		</div>
+	</div>)
 }
 
 export default ChatList
