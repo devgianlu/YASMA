@@ -30,6 +30,9 @@ const emitPeerOnlineNotification = (username: string) => {
 
 const setupListeners = () => {
 	db.on('message', ({peer, msg}) => {
+		if (msg.own || msg.read)
+			return
+
 		emitMessageNotification(peer, msg)
 			.catch(err => console.error(`failed emitting message notification: ${err.message}`))
 	})
