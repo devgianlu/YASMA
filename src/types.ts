@@ -7,7 +7,8 @@ export type ChatItem = {
 
 export type ChatMessage = {
 	id: number
-	text: string
+	file: boolean
+	content: string
 	time: number
 	read: boolean
 	own: boolean
@@ -31,8 +32,9 @@ export type PeerHelloAckPacket = {
 
 export type PeerMessagePacket = {
 	type: 'msg'
+	file: boolean
 	ackId: number
-	text: string
+	content: string
 	time: number
 }
 
@@ -43,7 +45,7 @@ export type PeerMessageAckPacket = {
 
 export type PeerPacket = PeerHelloPacket | PeerHelloAckPacket | PeerMessagePacket | PeerMessageAckPacket
 
-export type OnMessageListener = (peer: string, username: string, text: string, time: number) => void
+export type OnMessageListener = (peer: string, username: string, file: boolean, content: string, time: number) => void
 export type OnPeerListener = (peer: string, username: string, online: boolean) => void
 
 export class PeerError extends Error {

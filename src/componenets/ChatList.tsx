@@ -36,9 +36,12 @@ const ChatListItem: FunctionComponent<{ item: ChatItem, online: boolean }> = ({i
 			else ctx.setCurrent(item)
 		}}
 	>
-		<div className="ms-2 me-auto">
+		<div className="ms-2 me-auto text-truncate">
 			<div className={'fw-bold ' + (online ? 'text-success' : 'text-danger')}>{item.username}</div>
-			{lastMessage ? lastMessage.text : <i>no messages</i>}
+			{lastMessage ?
+				(lastMessage.file ? lastMessage.content.split('\x00')[0] : lastMessage.content)
+				: <i>no messages</i>
+			}
 		</div>
 		{unreadMessages > 0 && (
 			<Badge bg="danger" pill>{unreadMessages}</Badge>

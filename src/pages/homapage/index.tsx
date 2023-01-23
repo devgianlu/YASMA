@@ -15,10 +15,10 @@ const Homepage: FunctionComponent = () => {
 			setCurrent: (chat) => setCurrent(chat),
 		}}>
 			<Row className="h-100 mx-0">
-				<Col xs={2} className="px-0 border-end">
+				<Col xs={4} lg={2} className="px-0 border-end">
 					<ChatList/>
 				</Col>
-				<Col xs={10} className="px-0">
+				<Col xs={8} lg={10} className="px-0">
 					<ChatView/>
 				</Col>
 			</Row>

@@ -1,8 +1,8 @@
-import React, {FunctionComponent, useCallback, useContext, useEffect, useRef, useState} from 'react'
+import React, {ChangeEvent, FunctionComponent, useCallback, useContext, useEffect, useRef, useState} from 'react'
 import {HomepageContext} from '../pages/homapage/context'
 import {Chat, ChatMessage} from '../types'
 import {Button, Container, Form, InputGroup} from 'react-bootstrap'
-import {sendChatMessage} from '../p2p'
+import {sendChatFile, sendChatMessage} from '../p2p'
 import db, {ChatEvent, MessageEvent} from '../p2p/db'
 import moment from 'moment'
 
@@ -15,6 +15,16 @@ const ChatHeader: FunctionComponent<{ chat: Chat }> = ({chat}) => {
 	)
 }
 
+const fakeDownload = (filename: string, content: string) => {
+	const elem = document.createElement('a')
+	elem.style.display = 'none'
+	elem.setAttribute('href', 'data:application/octet-stream,' + encodeURIComponent(window.atob(content)))
+	elem.setAttribute('download', filename)
+	document.body.appendChild(elem)
+	elem.click()
+	document.body.removeChild(elem)
+}
+
 const ChatMessage: FunctionComponent<{
 	msg: ChatMessage,
 	readLine: boolean,
@@ -25,10 +35,21 @@ const ChatMessage: FunctionComponent<{
 	else classes.push('text-start')
 	if (readLine) classes.push('border-top border-primary')
 
-	return (<div className={classes.join(' ')}>
-		<div className={'mb-0 lh-sm text-wrap text-break' + (unsent ? ' text-danger' : '')}>{msg.text}</div>
-		<small className="text-muted">{moment(msg.time).fromNow()}</small>
-	</div>)
+	if (msg.file) {
+		const [filename, content] = msg.content.split('\x00')
+		return (<div className={classes.join(' ')}>
+			<div className={'mb-0 lh-sm' + (unsent ? ' text-danger' : '')}>
+				<a href="#" onClick={() => fakeDownload(filename, content)}>{filename}</a>
+			</div>
+			<small className="text-muted">{moment(msg.time).fromNow()}</small>
+		</div>)
+	} else {
+		return (<div className={classes.join(' ')}>
+			<div
+				className={'mb-0 lh-sm text-wrap text-break text-truncate' + (unsent ? ' text-danger' : '')}>{msg.content}</div>
+			<small className="text-muted">{moment(msg.time).fromNow()}</small>
+		</div>)
+	}
 }
 
 const ChatBody: FunctionComponent<{ chat: Chat }> = ({chat}) => {
@@ -71,25 +92,32 @@ const ChatBody: FunctionComponent<{ chat: Chat }> = ({chat}) => {
 	)
 }
 
-const ChatComposeMessage: FunctionComponent<{ send: (text: string) => void }> = ({send}) => {
+const ChatComposeMessage: FunctionComponent<{ send: (text: string, file: File) => void }> = ({send}) => {
 	const [text, setText] = useState('')
+	const [file, setFile] = useState<File>()
+	const inputFileRef = useRef<HTMLInputElement>()
 
 	return (
 		<InputGroup className="mb-3 px-3">
+			<input type="file" hidden/>
 			<Form.Control
 				placeholder="Message"
 				value={text}
 				onChange={(ev) => setText(ev.target.value)}
 			/>
-			<Button variant="outline-secondary" onClick={() => {
+			<Form.Control
+				type="file" ref={inputFileRef}
+				onChange={(ev: ChangeEvent<HTMLInputElement>) => setFile(ev.target.files[0])}/>
+			<Button variant="primary" onClick={() => {
 				if (!text.trim())
 					return
 
-				send(text.trim())
+				send(text.trim(), file)
 				setText('')
-			}}>
-				Send
-			</Button>
+				setFile(undefined)
+				if (inputFileRef.current)
+					inputFileRef.current.value = ''
+			}}>Send</Button>
 		</InputGroup>
 	)
 }
@@ -116,9 +144,14 @@ const ChatView: FunctionComponent = () => {
 		return () => db.off('message', onMessage)
 	}, [ctx.current])
 
-	const send = useCallback((text: string) => {
+	const send = useCallback((text: string, file: File) => {
 		if (!chat)
 			return
+
+		if (file) {
+			sendChatFile(chat.peer, file)
+				.catch(err => console.error(`failed sending file: ${err.message}`))
+		}
 
 		sendChatMessage(chat.peer, text)
 			.catch(err => console.error(`failed sending message: ${err.message}`))

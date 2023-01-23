@@ -28,7 +28,7 @@ export class ConnManager {
 		this.#onmessage = onmessage
 
 		this.on('msg', (data: PeerMessagePacket) => {
-			this.#onmessage(this.#conn.peer, this.#username, data.text, data.time)
+			this.#onmessage(this.#conn.peer, this.#username, data.file, data.content, data.time)
 			this.#log(`sending message ack for ${data.ackId}`)
 			this.send({type: 'msgAck', ackId: data.ackId})
 				.catch(err => this.#log(`failed sending ack for message ${data.ackId}: ${err}`))
@@ -188,7 +188,7 @@ export class ConnManager {
 		})
 	}
 
-	async sendMessage(text: string, time: number): Promise<void> {
+	async sendMessage(content: string, time: number, file: boolean): Promise<void> {
 		const ackId = Math.floor(Math.random() * 4294967296)
 
 		const promise = new Promise<void>((accept, reject) => {
@@ -207,7 +207,7 @@ export class ConnManager {
 			}
 			this.on('msgAck', onAck)
 		})
-		await this.send({type: 'msg', text, time, ackId})
+		await this.send({type: 'msg', content, file, time, ackId})
 		return await promise
 	}
 
@@ -215,10 +215,10 @@ export class ConnManager {
 		console.log('[P2P]', `[${this.#conn.peer}]`, msg)
 	}
 
-	async send(packet: PeerPacket, chunked = false): Promise<void> {
+	async send(packet: PeerPacket): Promise<void> {
 		return new Promise((accept) => {
 			this.#log(`sending '${packet.type}' packet, open: ${this.#conn.open}`)
-			this.#conn.send(packet, chunked)
+			this.#conn.send(packet)
 			accept()
 		})
 	}

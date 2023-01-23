@@ -13,7 +13,8 @@ export type MessageEvent = {
 	type: 'message'
 	peer: string
 	username: string
-	text: string
+	file: boolean
+	content: string
 	time: number
 }
 type Event = PeerEvent | MessageEvent
@@ -79,8 +80,8 @@ class PeerManager {
 			(peer: string, username: string, online: boolean) => {
 				this.#emit({type: 'peer', peer, username, online})
 			},
-			(peer: string, username: string, text: string, time: number) => {
-				this.#emit({type: 'message', peer, username, text, time})
+			(peer: string, username: string, file: boolean, content: string, time: number) => {
+				this.#emit({type: 'message', peer, username, file, content, time})
 			})
 		this.#conns[conn.peer] = connManager
 		return connManager
@@ -124,7 +125,17 @@ class PeerManager {
 			throw new PeerError('unknown peer')
 		}
 
-		await conn.sendMessage(text, time)
+		await conn.sendMessage(text, time, false)
+	}
+
+	async sendFile(peer: string, content: string, time: number): Promise<void> {
+		const conn = this.#conns[peer]
+		if (!conn) {
+			// TODO: try to connect
+			throw new PeerError('unknown peer')
+		}
+
+		await conn.sendMessage(content, time, true)
 	}
 
 	get peer(): string {
