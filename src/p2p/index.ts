@@ -59,7 +59,7 @@ export const init = async () => {
 		manager.connectTo(peerId).catch(() => console.error(`failed connecting to peer ${peerId}`))
 }
 
-export const deinit = async () => {
+export const deinit = () => {
 	manager.deinit()
 }
 

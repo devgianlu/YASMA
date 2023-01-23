@@ -4,6 +4,7 @@ import Router from './Router'
 
 import 'bootstrap/dist/css/bootstrap.min.css'
 import {deinit, init} from './p2p'
+import {initNotifications} from './p2p/notification'
 
 const root = ReactDOM.createRoot(
 	document.getElementById('root') as HTMLElement
@@ -15,9 +16,10 @@ root.render(
 )
 
 window.addEventListener('load', () => {
-	void init()
+	initNotifications()
+	init().catch(err => console.error(`failed initializing: ${err.message}`))
 })
 
 window.addEventListener('unload', () => {
-	void deinit()
+	deinit()
 })

@@ -67,6 +67,7 @@ export type ChatEvent = {
 export type MessageEvent = {
 	type: 'message'
 	peer: string
+	msg: ChatMessage
 }
 type Event = ChatsEvent | ChatEvent | MessageEvent
 
@@ -221,7 +222,7 @@ class Database {
 		const msgWithId = {...msg, id: counter}
 		await resolveDbRequest(trans.objectStore('messages').put(msgWithId, messageIdToDatabaseKey(peer, counter)))
 		await resolveDbRequest(trans.objectStore('counters').put(counter + 1, peer))
-		this.#emit({type: 'message', peer})
+		this.#emit({type: 'message', peer, msg: msgWithId})
 		this.#emit({type: 'chat', peer})
 		return msgWithId
 	}
