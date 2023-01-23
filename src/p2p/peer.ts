@@ -28,7 +28,6 @@ class PeerManager {
 	readonly #listeners: Partial<{ [Type in Event['type']]: Listener<Type>[] }> = {}
 
 	#peer: Peer
-	#id: string
 	#username: string
 
 	#log(msg: string): void {
@@ -36,9 +35,8 @@ class PeerManager {
 	}
 
 	async init(id: string, username: string) {
-		this.#id = id
 		this.#username = username
-		this.#peer = new Peer(`yasma_${id}`, {debug: 2})
+		this.#peer = new Peer(id, {debug: 2})
 		this.#peer.on('connection', this.#handleConnection, this)
 		await new Promise<void>((accept, reject) => {
 			const open = () => {
@@ -145,13 +143,6 @@ class PeerManager {
 		}
 
 		await conn.sendMessage(content, time, true)
-	}
-
-	get peer(): string {
-		if (!this.#peer)
-			throw new PeerError('peer not ready')
-
-		return this.#id
 	}
 
 	deinit() {

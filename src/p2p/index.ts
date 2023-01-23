@@ -1,25 +1,55 @@
 import {Chat} from '../types'
 import db from './db'
 import manager from './peer'
+import * as Crypto from 'crypto-js'
 
-const getSelfId = (): string => {
-	let id = localStorage.getItem('yasma_self_id')
-	if (!id) {
-		id = crypto.randomUUID()
-		localStorage.setItem('yasma_self_id', id)
+const firstSetup = () => {
+	const id = 'yasma_' + window.crypto.randomUUID()
+
+	let username = ''
+	while (!username || username.length < 3)
+		username = prompt('Enter your username:')
+
+	let key = ''
+	while (!key)
+		key = prompt('Enter your encryption key:')
+
+	localStorage.setItem('yasma_self_id', Crypto.AES.encrypt(id, key).toString())
+	localStorage.setItem('yasma_username', Crypto.AES.encrypt(username, key).toString())
+
+	return {id, username, key}
+}
+
+export const initEncryption = (): { username: string, id: string, key: string } => {
+	const storedId = localStorage.getItem('yasma_self_id')
+	if (!storedId)
+		return firstSetup()
+
+	let id = '', key: string
+	while (!id.startsWith('yasma_')) {
+		key = prompt('Enter the secret key:')
+		if (!key)
+			continue
+
+		try {
+			id = Crypto.AES.decrypt(storedId, key).toString(Crypto.enc.Utf8)
+		} catch (err) {
+			console.error(`cannot decrypt id: ${err.message}`)
+		}
 	}
-	return id
+
+	let username = localStorage.getItem('yasma_username')
+	try {
+		if (key) username = Crypto.AES.decrypt(username, key).toString(Crypto.enc.Utf8)
+	} catch (err) {
+		throw new Error(`cannot decrypt username: ${err.message}`)
+	}
+
+	return {username, id, key}
 }
 
-const getSelfUsername = (): string => {
-	const username = localStorage.getItem('yasma_username')
-	if (!username)
-		throw new Error('Missing username!')
-	return username
-}
-
-export const init = async () => {
-	await manager.init(getSelfId(), getSelfUsername())
+export const init = async (localPeerId: string, localUsername: string) => {
+	await manager.init(localPeerId, localUsername)
 
 	manager.on('peer', ({peer, username, online}) => {
 		if (!online)

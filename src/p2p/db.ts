@@ -1,4 +1,5 @@
 import {Chat, ChatItem, ChatMessage} from '../types'
+import * as Crypto from 'crypto-js'
 
 const openDb = async (): Promise<IDBDatabase> => {
 	return new Promise((accept, reject) => {
@@ -24,33 +25,11 @@ const openDb = async (): Promise<IDBDatabase> => {
 	})
 }
 
-const resolveDbRequest = <T>(req: IDBRequest<T>): Promise<T> => {
+const resolve = <T>(req: IDBRequest<T>): Promise<T> => {
 	return new Promise((accept, reject) => {
 		req.addEventListener('success', () => accept(req.result))
 		req.addEventListener('error', () => reject(req.error))
 	})
-}
-
-const iterateCursor = async function* (req: IDBRequest<IDBCursorWithValue>): AsyncGenerator<IDBCursorWithValue> {
-	while (true) {
-		const cursor = await resolveDbRequest<IDBCursorWithValue | null>(req)
-		if (!cursor)
-			break
-
-		yield cursor
-		cursor.continue()
-	}
-}
-
-const iterateCursorValue = async function* <T>(req: IDBRequest<IDBCursorWithValue>): AsyncGenerator<T> {
-	while (true) {
-		const cursor = await resolveDbRequest<IDBCursorWithValue | null>(req)
-		if (!cursor)
-			break
-
-		yield cursor.value
-		cursor.continue()
-	}
 }
 
 const messageIdToDatabaseKey = (peer: string, msgId: number): IDBValidKey => {
@@ -73,8 +52,13 @@ type Event = ChatsEvent | ChatEvent | MessageEvent
 
 type Listener<Type extends Event['type']> = (data: Readonly<Event & { type: Type }>) => void
 
+type EncryptedData = {
+	__encrypted__: string
+}
+
 class Database {
 	#db: IDBDatabase
+	#key: string
 	readonly #listeners: Partial<{ [Type in Event['type']]: Listener<Type>[] }> = {}
 
 	on<Type extends Event['type']>(type: Type, func: Listener<Type>) {
@@ -96,6 +80,49 @@ class Database {
 		})
 	}
 
+	setKey(key: string) {
+		this.#key = key
+	}
+
+	#decrypt<T>(item: EncryptedData | T): T {
+		if (typeof item === 'object' && '__encrypted__' in item)
+			return JSON.parse(Crypto.AES.decrypt(item['__encrypted__'], this.#key).toString(Crypto.enc.Utf8))
+
+		return item
+	}
+
+	#encrypt<T>(item: T): EncryptedData | T {
+		if (this.#key)
+			return {'__encrypted__': Crypto.AES.encrypt(JSON.stringify(item), this.#key).toString()}
+
+		return item
+	}
+
+	#resolveGet<T>(req: IDBRequest<T>): Promise<T> {
+		return new Promise<T>((accept, reject) => {
+			req.addEventListener('success', () => accept(this.#decrypt(req.result)))
+			req.addEventListener('error', () => reject(req.error))
+		})
+	}
+
+	#resolveGetAll<T>(req: IDBRequest<T[]>): Promise<T[]> {
+		return new Promise<T[]>((accept, reject) => {
+			req.addEventListener('success', () => accept(req.result.map(this.#decrypt.bind(this))))
+			req.addEventListener('error', () => reject(req.error))
+		})
+	}
+
+	async* #iterateCursor<T extends object>(req: IDBRequest<IDBCursorWithValue>): AsyncGenerator<[IDBCursorWithValue, T]> {
+		while (true) {
+			const cursor = await resolve<IDBCursorWithValue | null>(req)
+			if (!cursor)
+				break
+
+			yield [cursor, this.#decrypt<T>(cursor.value)]
+			cursor.continue()
+		}
+	}
+
 	async #ensureDbReady() {
 		if (this.#db)
 			return
@@ -106,36 +133,38 @@ class Database {
 	async getChatIds(): Promise<string[]> {
 		await this.#ensureDbReady()
 		const trans = this.#db.transaction('chats', 'readonly')
-		return await resolveDbRequest(trans.objectStore('chats').getAllKeys()) as string[]
+		return await resolve(trans.objectStore('chats').getAllKeys()) as string[]
 	}
 
 	async getChats(): Promise<ChatItem[]> {
 		await this.#ensureDbReady()
 		const trans = this.#db.transaction('chats', 'readonly')
-		return await resolveDbRequest(trans.objectStore('chats').getAll())
+		return await this.#resolveGetAll(trans.objectStore('chats').getAll())
 	}
 
 	async hasChat(peer: string): Promise<boolean> {
 		await this.#ensureDbReady()
 		const trans = this.#db.transaction('chats', 'readonly')
-		return await resolveDbRequest(trans.objectStore('chats').count(peer)) > 0
+		return await resolve(trans.objectStore('chats').count(peer)) > 0
 	}
 
 	async getLastMessage(peer: string): Promise<ChatMessage> {
 		await this.#ensureDbReady()
 		const trans = this.#db.transaction('messages', 'readonly')
-		const messages = await iterateCursorValue<ChatMessage>(trans.objectStore('messages').openCursor(IDBKeyRange.bound(peer + '_0', peer + '_9'), 'prev'))
-		return (await messages.next()).value
+		const messages = this.#iterateCursor<ChatMessage>(trans.objectStore('messages').openCursor(IDBKeyRange.bound(peer + '_0', peer + '_9'), 'prev'))
+		const value = (await messages.next()).value
+		if (!value) return undefined
+		return value[1]
 	}
 
 	async resetUnreadMessages(peer: string): Promise<void> {
 		await this.#ensureDbReady()
 		const trans = this.#db.transaction('messages', 'readwrite')
-		for await (const cursor of iterateCursor(trans.objectStore('messages').openCursor(IDBKeyRange.bound(peer + '_0', peer + '_9'), 'prev'))) {
-			if (cursor.value.read && !cursor.value.own)
+		for await (const [cursor, item] of this.#iterateCursor<ChatMessage>(trans.objectStore('messages').openCursor(IDBKeyRange.bound(peer + '_0', peer + '_9'), 'prev'))) {
+			if (item.read && !item.own)
 				break
 
-			cursor.update({...cursor.value, read: true})
+			cursor.update(this.#encrypt<ChatMessage>({...item, read: true}))
 		}
 		this.#emit({type: 'chat', peer})
 	}
@@ -144,7 +173,7 @@ class Database {
 		await this.#ensureDbReady()
 		const trans = this.#db.transaction('messages', 'readonly')
 		let count = 0
-		for await (const item of iterateCursorValue<ChatMessage>(trans.objectStore('messages').openCursor(IDBKeyRange.bound(peer + '_0', peer + '_9'), 'prev'))) {
+		for await (const [, item] of this.#iterateCursor<ChatMessage>(trans.objectStore('messages').openCursor(IDBKeyRange.bound(peer + '_0', peer + '_9'), 'prev'))) {
 			if (!item.read) count++
 			else if (!item.own) break
 		}
@@ -154,11 +183,11 @@ class Database {
 	async getChat(peer: string): Promise<Chat> {
 		await this.#ensureDbReady()
 		const trans = this.#db.transaction(['chats', 'messages'], 'readonly')
-		const user = await resolveDbRequest(trans.objectStore('chats').get(peer))
+		const user = await this.#resolveGet<Chat>(trans.objectStore('chats').get(peer))
 		if (!user)
 			return undefined
 
-		const messages = await resolveDbRequest<ChatMessage[]>(trans.objectStore('messages').getAll(IDBKeyRange.bound(peer + '_0', peer + '_9')))
+		const messages = await this.#resolveGetAll<ChatMessage>(trans.objectStore('messages').getAll(IDBKeyRange.bound(peer + '_0', peer + '_9')))
 
 		return {
 			peer,
@@ -170,7 +199,7 @@ class Database {
 	async createChat(peer: string, username: string): Promise<void> {
 		await this.#ensureDbReady()
 		const trans = this.#db.transaction('chats', 'readwrite')
-		await resolveDbRequest(trans.objectStore('chats').put({peer, username}, peer))
+		await resolve(trans.objectStore('chats').put(this.#encrypt<Chat>({peer, username, messages: []}), peer))
 		this.#emit({type: 'chats'})
 		this.#emit({type: 'chat', peer})
 	}
@@ -179,36 +208,36 @@ class Database {
 		await this.#ensureDbReady()
 		const trans = this.#db.transaction('unsentMessages', 'readwrite')
 
-		let ids = await resolveDbRequest<number[]>(trans.objectStore('unsentMessages').get(peer))
+		let ids = await this.#resolveGet<number[]>(trans.objectStore('unsentMessages').get(peer))
 		if (!ids) ids = []
 		if (ids.indexOf(msg.id) === -1) ids.push(msg.id)
-		await resolveDbRequest(trans.objectStore('unsentMessages').put(ids, peer))
+		await resolve(trans.objectStore('unsentMessages').put(this.#encrypt<number[]>(ids), peer))
 	}
 
 	async removeUnsentMessage(peer: string, msg: ChatMessage) {
 		await this.#ensureDbReady()
 		const trans = this.#db.transaction('unsentMessages', 'readwrite')
 
-		const ids = await resolveDbRequest<number[]>(trans.objectStore('unsentMessages').get(peer))
+		const ids = await this.#resolveGet<number[]>(trans.objectStore('unsentMessages').get(peer))
 		if (!ids)
 			return
 
 		const removeIdx = ids.indexOf(msg.id)
 		if (removeIdx !== -1) ids.splice(removeIdx, 1)
-		await resolveDbRequest(trans.objectStore('unsentMessages').put(ids, peer))
+		await resolve(trans.objectStore('unsentMessages').put(this.#encrypt<number[]>(ids), peer))
 		this.#emit({type: 'chat', peer})
 	}
 
 	async getUnsentMessages(peer: string): Promise<ChatMessage[]> {
 		await this.#ensureDbReady()
 		const trans = this.#db.transaction(['unsentMessages', 'messages'], 'readonly')
-		const ids = await resolveDbRequest<number[]>(trans.objectStore('unsentMessages').get(peer))
+		const ids = await this.#resolveGet<number[]>(trans.objectStore('unsentMessages').get(peer))
 		if (!ids)
 			return []
 
 		const msgs = []
 		for (const id of ids)
-			msgs.push(await resolveDbRequest(trans.objectStore('messages').get(messageIdToDatabaseKey(peer, id))))
+			msgs.push(await this.#resolveGet<ChatMessage>(trans.objectStore('messages').get(messageIdToDatabaseKey(peer, id))))
 
 		return msgs
 	}
@@ -216,12 +245,12 @@ class Database {
 	async storeMessage(peer: string, msg: Omit<ChatMessage, 'id'>): Promise<ChatMessage> {
 		await this.#ensureDbReady()
 		const trans = this.#db.transaction(['messages', 'counters'], 'readwrite')
-		let counter = await resolveDbRequest<number>(trans.objectStore('counters').get(peer))
+		let counter = await this.#resolveGet<number>(trans.objectStore('counters').get(peer))
 		if (typeof counter !== 'number') counter = 0
 
 		const msgWithId = {...msg, id: counter}
-		await resolveDbRequest(trans.objectStore('messages').put(msgWithId, messageIdToDatabaseKey(peer, counter)))
-		await resolveDbRequest(trans.objectStore('counters').put(counter + 1, peer))
+		await resolve(trans.objectStore('messages').put(this.#encrypt<ChatMessage>(msgWithId), messageIdToDatabaseKey(peer, counter)))
+		await resolve(trans.objectStore('counters').put(this.#encrypt<number>(counter + 1), peer))
 		this.#emit({type: 'message', peer, msg: msgWithId})
 		this.#emit({type: 'chat', peer})
 		return msgWithId
