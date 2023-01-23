@@ -21,6 +21,8 @@ type Event = PeerEvent | MessageEvent
 
 type Listener<Type extends Event['type']> = (data: Readonly<Event & { type: Type }>) => void
 
+const CHECK_INTERVAL_MS = 10000
+
 class PeerManager {
 	readonly #conns: { [key: string]: ConnManager } = {}
 	readonly #listeners: Partial<{ [Type in Event['type']]: Listener<Type>[] }> = {}
@@ -54,6 +56,13 @@ class PeerManager {
 			this.#peer.on('open', open, this)
 			this.#peer.on('error', error, this)
 		})
+
+		setInterval(() => {
+			for (const [peer, conn] of Object.entries(this.#conns)) {
+				if (conn.dead)
+					this.#emit({type: 'peer', peer, username: conn.username, online: false})
+			}
+		}, CHECK_INTERVAL_MS)
 	}
 
 	on<Type extends Event['type']>(type: Type, func: Listener<Type>) {
