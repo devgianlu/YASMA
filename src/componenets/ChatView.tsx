@@ -99,12 +99,12 @@ const ChatComposeMessage: FunctionComponent<{ send: (text: string, file: File) =
 
 	return (
 		<InputGroup className="mb-3 px-3">
-			<input type="file" hidden/>
 			<Form.Control
 				placeholder="Message"
 				value={text}
 				onChange={(ev) => setText(ev.target.value)}
 			/>
+			<input type="file" hidden/>
 			<Form.Control
 				type="file" ref={inputFileRef}
 				onChange={(ev: ChangeEvent<HTMLInputElement>) => setFile(ev.target.files[0])}/>
