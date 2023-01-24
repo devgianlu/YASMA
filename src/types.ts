@@ -23,11 +23,13 @@ export type Chat = {
 export type PeerHelloPacket = {
 	type: 'hello'
 	username: string
+	publicKey: JsonWebKey
 }
 
 export type PeerHelloAckPacket = {
 	type: 'helloAck'
 	username: string
+	publicKey: JsonWebKey
 }
 
 export type PeerMessagePacket = {
@@ -46,7 +48,7 @@ export type PeerMessageAckPacket = {
 export type PeerPacket = PeerHelloPacket | PeerHelloAckPacket | PeerMessagePacket | PeerMessageAckPacket
 
 export type OnMessageListener = (peer: string, username: string, file: boolean, content: string, time: number) => void
-export type OnPeerListener = (peer: string, username: string, online: boolean) => void
+export type OnPeerListener = (peer: string, username: string, publicKey: JsonWebKey, online: boolean) => void
 
 export class PeerError extends Error {
 	constructor(msg: string)

@@ -1,12 +1,14 @@
 import {DataConnection, Peer} from 'peerjs'
 import {PeerError} from '../types'
 import {ConnManager} from './conn'
+import enc from './enc'
 
 
 export type PeerEvent = {
 	type: 'peer'
 	peer: string
 	username: string
+	publicKey: JsonWebKey
 	online: boolean
 }
 export type MessageEvent = {
@@ -58,7 +60,7 @@ class PeerManager {
 		setInterval(() => {
 			for (const [peer, conn] of Object.entries(this.#conns)) {
 				if (conn.dead)
-					this.#emit({type: 'peer', peer, username: conn.username, online: false})
+					this.#emit({type: 'peer', peer, username: conn.username, publicKey: conn.publicKey, online: false})
 			}
 		}, CHECK_INTERVAL_MS)
 	}
@@ -84,10 +86,10 @@ class PeerManager {
 
 	#newConnManager(conn: DataConnection) {
 		const connManager = new ConnManager(conn,
-			(peer: string, username: string, online: boolean) => {
-				this.#emit({type: 'peer', peer, username, online})
+			(peer, username, publicKey, online) => {
+				this.#emit({type: 'peer', peer, username, publicKey, online})
 			},
-			(peer: string, username: string, file: boolean, content: string, time: number) => {
+			(peer, username, file, content, time) => {
 				this.#emit({type: 'message', peer, username, file, content, time})
 			})
 		this.#conns[conn.peer] = connManager
@@ -115,34 +117,32 @@ class PeerManager {
 		let connManager = this.#conns[peer]
 		if (!connManager || connManager.dead) {
 			connManager = this.#newConnManager(this.#peer.connect(peer))
-			return await connManager.handshakeOutgoing(this.#username)
+			await connManager.handshakeOutgoing(this.#username)
 		} else if (connManager.connecting) {
-			return await connManager.waitConnected()
-		} else if (connManager.connected) {
-			return connManager.username
-		} else {
+			await connManager.waitConnected()
+		} else if (!connManager.connected) {
 			throw new PeerError('unknown state')
 		}
+
+		return connManager.username
 	}
 
 	async sendMessage(peer: string, text: string, time: number): Promise<void> {
 		const conn = this.#conns[peer]
-		if (!conn) {
-			// TODO: try to connect
+		if (!conn)
 			throw new PeerError('unknown peer')
-		}
 
-		await conn.sendMessage(text, time, false)
+		const textWithSignature = await enc.signMessage(text)
+		await conn.sendMessage(textWithSignature, time, false)
 	}
 
 	async sendFile(peer: string, content: string, time: number): Promise<void> {
 		const conn = this.#conns[peer]
-		if (!conn) {
-			// TODO: try to connect
+		if (!conn)
 			throw new PeerError('unknown peer')
-		}
 
-		await conn.sendMessage(content, time, true)
+		const contentWithSignature = await enc.signMessage(content)
+		await conn.sendMessage(contentWithSignature, time, true)
 	}
 
 	deinit() {

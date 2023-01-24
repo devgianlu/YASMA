@@ -3,7 +3,7 @@ import * as Crypto from 'crypto-js'
 
 const openDb = async (): Promise<IDBDatabase> => {
 	return new Promise((accept, reject) => {
-		const req = self.indexedDB.open('yasm', 1)
+		const req = self.indexedDB.open('yasm', 2)
 
 		req.addEventListener('success', () => {
 			accept(req.result)
@@ -17,6 +17,9 @@ const openDb = async (): Promise<IDBDatabase> => {
 					req.result.createObjectStore('messages')
 					req.result.createObjectStore('counters')
 					req.result.createObjectStore('unsentMessages')
+				// eslint-disable-next-line no-fallthrough
+				case 1:
+					req.result.createObjectStore('publicKeys')
 			}
 		})
 		req.addEventListener('error', () => {
@@ -254,6 +257,24 @@ class Database {
 		this.#emit({type: 'message', peer, msg: msgWithId})
 		this.#emit({type: 'chat', peer})
 		return msgWithId
+	}
+
+	async loadPublicKey(peer: string): Promise<JsonWebKey> {
+		await this.#ensureDbReady()
+		const trans = this.#db.transaction('publicKeys', 'readonly')
+		return await this.#resolveGet<JsonWebKey>(trans.objectStore('publicKeys').get(peer))
+	}
+
+	async storePublicKey(peer: string, key: JsonWebKey) {
+		await this.#ensureDbReady()
+		const currentKey = await this.loadPublicKey(peer)
+		if (!currentKey) {
+			const trans = this.#db.transaction('publicKeys', 'readwrite')
+			await resolve(trans.objectStore('publicKeys').put(this.#encrypt<JsonWebKey>(key), peer))
+			return
+		}
+
+		// TODO: verify keys are equal!
 	}
 }
 

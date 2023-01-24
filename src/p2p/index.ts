@@ -2,9 +2,11 @@ import {Chat} from '../types'
 import db from './db'
 import manager from './peer'
 import * as Crypto from 'crypto-js'
+import enc, {generateMasterKey} from './enc'
 
-const firstSetup = () => {
+const firstSetup = async () => {
 	const id = 'yasma_' + window.crypto.randomUUID()
+	const masterKey = await generateMasterKey()
 
 	let username = ''
 	while (!username || username.length < 3)
@@ -16,14 +18,15 @@ const firstSetup = () => {
 
 	localStorage.setItem('yasma_self_id', Crypto.AES.encrypt(id, key).toString())
 	localStorage.setItem('yasma_username', Crypto.AES.encrypt(username, key).toString())
+	localStorage.setItem('yasma_master_key', Crypto.AES.encrypt(JSON.stringify(masterKey), key).toString())
 
-	return {id, username, key}
+	return {id, username, key, masterKey}
 }
 
-export const initEncryption = (): { username: string, id: string, key: string } => {
+export const initEncryption = async (): Promise<{ username: string, id: string, key: string, masterKey: [JsonWebKey, JsonWebKey] }> => {
 	const storedId = localStorage.getItem('yasma_self_id')
 	if (!storedId)
-		return firstSetup()
+		return await firstSetup()
 
 	let id = '', key: string
 	while (!id.startsWith('yasma_')) {
@@ -38,50 +41,66 @@ export const initEncryption = (): { username: string, id: string, key: string } 
 		}
 	}
 
-	let username = localStorage.getItem('yasma_username')
+	let username
 	try {
-		if (key) username = Crypto.AES.decrypt(username, key).toString(Crypto.enc.Utf8)
+		username = Crypto.AES.decrypt(localStorage.getItem('yasma_username'), key).toString(Crypto.enc.Utf8)
 	} catch (err) {
 		throw new Error(`cannot decrypt username: ${err.message}`)
 	}
 
-	return {username, id, key}
+	let masterKey: [JsonWebKey, JsonWebKey]
+	try {
+		masterKey = JSON.parse(Crypto.AES.decrypt(localStorage.getItem('yasma_master_key'), key).toString(Crypto.enc.Utf8))
+	} catch (err) {
+		throw new Error(`cannot decrypt master key: ${err.message}`)
+	}
+
+	return {username, id, key, masterKey}
 }
 
 export const init = async (localPeerId: string, localUsername: string) => {
 	await manager.init(localPeerId, localUsername)
 
-	manager.on('peer', ({peer, username, online}) => {
+	manager.on('peer', ({peer, username, publicKey, online}) => {
 		if (!online)
 			return
 
-		db.hasChat(peer)
-			.then(async ok => {
-				if (!ok) {
-					await db.createChat(peer, username)
-					return
-				}
+		(async () => {
+			await db.storePublicKey(peer, publicKey)
 
-				const unsent = await db.getUnsentMessages(peer)
-				if (unsent.length === 0)
-					return
+			if (!(await db.hasChat(peer))) {
+				await db.createChat(peer, username)
+				return
+			}
 
-				console.log(`trying to flush ${unsent.length} messages`)
-				for (const msg of unsent) {
-					try {
-						if (msg.file) await manager.sendFile(peer, msg.content, msg.time)
-						else await manager.sendMessage(peer, msg.content, msg.time)
-						await db.removeUnsentMessage(peer, msg)
-					} catch (err) {
-						// ignore
-					}
+			const unsent = await db.getUnsentMessages(peer)
+			if (unsent.length === 0)
+				return
+
+			console.log(`trying to flush ${unsent.length} messages`)
+			for (const msg of unsent) {
+				try {
+					if (msg.file) await manager.sendFile(peer, msg.content, msg.time)
+					else await manager.sendMessage(peer, msg.content, msg.time)
+					await db.removeUnsentMessage(peer, msg)
+				} catch (err) {
+					// ignore
 				}
-			})
-			.catch(err => console.error(`failed handling peer: ${err.message}`))
+			}
+		})().catch(err => console.error(`failed handling peer ${peer}: ${err.message}`))
 	})
 	manager.on('message', ({peer, content, time, file}) => {
-		db.storeMessage(peer, {content, time, file, read: false, own: false})
-			.catch(err => console.error(`failed storing message: ${err.message}`))
+		(async () => {
+			const publicKeyData = await db.loadPublicKey(peer)
+			if (!publicKeyData)
+				throw new Error('no public key')
+
+			const plainContent = await enc.verifyMessage(content, publicKeyData)
+			if (plainContent === null)
+				throw new Error('could not verify')
+
+			await db.storeMessage(peer, {content: plainContent, time, file, read: false, own: false})
+		})().catch(err => console.error(`failed handling message from ${peer}: ${err.message}`))
 	})
 
 	// Try to connect to all known peers asynchronously

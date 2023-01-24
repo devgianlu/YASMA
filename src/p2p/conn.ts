@@ -8,6 +8,7 @@ import {
 	PeerMessagePacket,
 	PeerPacket
 } from '../types'
+import enc from './enc'
 
 const TIMEOUT_MS = 5000
 
@@ -18,8 +19,9 @@ export class ConnManager {
 	readonly #listeners: Partial<{ [Type in PeerPacket['type']]: [PacketListener<Type>, boolean][] }> = {}
 	readonly #onmessage: OnMessageListener
 	readonly #onpeer: OnPeerListener
-	#handshakePromise: Promise<string>
+	#handshakePromise: Promise<void>
 	#username: string
+	#publicKey: JsonWebKey
 	#opening = true
 
 	constructor(conn: DataConnection, onpeer: OnPeerListener, onmessage: OnMessageListener) {
@@ -60,9 +62,10 @@ export class ConnManager {
 		}
 	}
 
-	async handshakeIncoming(localUsername: string): Promise<string> {
+	async handshakeIncoming(localUsername: string) {
 		await this.#waitOpen()
-		return this.#handshakePromise = new Promise<string>((accept, reject) => {
+		const publicKey = await enc.publicJwk()
+		return this.#handshakePromise = new Promise<void>((accept, reject) => {
 			const timeout = setTimeout(() => {
 				this.#opening = false
 				this.off('hello', onHello)
@@ -76,10 +79,12 @@ export class ConnManager {
 				this.#log(`received hello from ${data.username}`)
 				clearTimeout(timeout)
 
-				this.send({type: 'helloAck', username: localUsername})
+				this.send({type: 'helloAck', username: localUsername, publicKey})
 					.then(() => {
 						this.#handshakePromise = undefined
-						accept(this.#username = data.username)
+						this.#username = data.username
+						this.#publicKey = data.publicKey
+						accept()
 					})
 					.catch(err => {
 						this.#handshakePromise = undefined
@@ -92,19 +97,19 @@ export class ConnManager {
 			// start receiving packets only **after** we setup the listener
 			this.#startReceive()
 		})
-			.then(username => {
-				this.#onpeer(this.#conn.peer, username, true)
-				return username
+			.then(() => {
+				this.#onpeer(this.#conn.peer, this.#username, this.#publicKey, true)
 			})
 			.catch(err => {
-				this.#onpeer(this.#conn.peer, undefined, false)
+				this.#onpeer(this.#conn.peer, undefined, undefined, false)
 				throw err
 			})
 	}
 
-	async handshakeOutgoing(localUsername: string): Promise<string> {
+	async handshakeOutgoing(localUsername: string) {
 		await this.#waitOpen()
-		return this.#handshakePromise = new Promise<string>((accept, reject) => {
+		const publicKey = await enc.publicJwk()
+		return this.#handshakePromise = new Promise<void>((accept, reject) => {
 			const timeout = setTimeout(() => {
 				this.off('helloAck', onAck)
 				this.#conn.off('error', onError)
@@ -119,7 +124,9 @@ export class ConnManager {
 				clearTimeout(timeout)
 				this.#conn.off('error', onError)
 				this.#handshakePromise = undefined
-				accept(this.#username = data.username)
+				this.#username = data.username
+				this.#publicKey = data.publicKey
+				accept()
 			}
 			this.once('helloAck', onAck)
 
@@ -135,7 +142,7 @@ export class ConnManager {
 			// start receiving packets only **after** we setup the listener
 			this.#startReceive()
 
-			this.send({type: 'hello', username: localUsername}).catch(err => {
+			this.send({type: 'hello', username: localUsername, publicKey}).catch(err => {
 				clearTimeout(timeout)
 				this.off('helloAck', onAck)
 				this.#conn.off('error', onError)
@@ -144,12 +151,11 @@ export class ConnManager {
 				reject(err)
 			})
 		})
-			.then(username => {
-				this.#onpeer(this.#conn.peer, username, true)
-				return username
+			.then(() => {
+				this.#onpeer(this.#conn.peer, this.#username, this.#publicKey, true)
 			})
 			.catch(err => {
-				this.#onpeer(this.#conn.peer, undefined, false)
+				this.#onpeer(this.#conn.peer, undefined, undefined, false)
 				throw err
 			})
 	}
@@ -229,7 +235,7 @@ export class ConnManager {
 			listeners.length = 0
 	}
 
-	async waitConnected(): Promise<string> {
+	async waitConnected() {
 		return await this.#handshakePromise
 	}
 
@@ -247,6 +253,10 @@ export class ConnManager {
 
 	get username(): string {
 		return this.#username
+	}
+
+	get publicKey(): JsonWebKey {
+		return this.#publicKey
 	}
 
 	get peerId(): string {
