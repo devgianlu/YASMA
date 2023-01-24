@@ -36,7 +36,8 @@ const ChatMessage: FunctionComponent<{
 	if (readLine) classes.push('border-top border-primary')
 
 	if (msg.file) {
-		const [filename, content] = msg.content.split('\x00')
+		const filename = msg.content.substring(0, msg.content.indexOf('\x00'))
+		const content = msg.content.substring(msg.content.indexOf('\x00') + 1)
 		return (<div className={classes.join(' ')}>
 			<div className={'mb-0 lh-sm' + (unsent ? ' text-danger' : '')}>
 				<a href="#" onClick={() => fakeDownload(filename, content)}>{filename}</a>

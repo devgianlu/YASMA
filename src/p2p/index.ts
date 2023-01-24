@@ -118,7 +118,7 @@ export const sendChatMessage = async (peer: string, text: string): Promise<void>
 export const sendChatFile = async (peer: string, file: File): Promise<void> => {
 	const content = await new Promise<string>((accept, reject) => {
 		const reader = new FileReader()
-		reader.onload = () => accept(file.name + '\x00' + window.btoa(reader.result as string))
+		reader.onload = () => accept(file.name + '\x00' + reader.result as string)
 		reader.onerror = () => reject(reader.error)
 		reader.readAsBinaryString(file)
 	})
