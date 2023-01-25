@@ -3,18 +3,13 @@ import db from './db'
 import manager from './peer'
 import enc, {decryptSymmetric, deriveSymmetricKey, encryptSymmetric, generateMasterKey} from './enc'
 
-const firstSetup = async () => {
+export const setupRequired = () => {
+	return !localStorage.getItem('yasma_self_id') || !localStorage.getItem('yasma_salt')
+}
+
+export const firstSetup = async (username: string, passphrase: string) => {
 	const id = 'yasma_' + window.crypto.randomUUID()
 	const masterKey = await generateMasterKey()
-
-	let username = ''
-	while (!username || username.length < 3)
-		username = prompt('Enter your username:')
-
-	let passphrase = ''
-	while (!passphrase)
-		passphrase = prompt('Enter your passphrase:')
-
 	const salt = window.crypto.randomUUID()
 	const encKey = await deriveSymmetricKey(passphrase, salt)
 
@@ -27,13 +22,9 @@ const firstSetup = async () => {
 }
 
 export const initEncryption = async (passphrase: string): Promise<{ username: string, id: string, encKey: CryptoKey, masterKey: [JsonWebKey, JsonWebKey] }> => {
-	const storedId = localStorage.getItem('yasma_self_id')
-	if (!storedId)
-		return await firstSetup()
-
-	const salt = localStorage.getItem('yasma_salt')
-	if (!salt)
-		return await firstSetup()
+	const storedId = localStorage.getItem('yasma_self_id'), salt = localStorage.getItem('yasma_salt')
+	if (!storedId || !salt)
+		throw new Error('missing id and/or salt')
 
 	const encKey = await deriveSymmetricKey(passphrase, salt)
 
