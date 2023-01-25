@@ -21,8 +21,8 @@ window.addEventListener('load', () => {
 	initNotifications()
 
 	initEncryption()
-		.then(async ({username, key, id, masterKey}) => {
-			db.setKey(key)
+		.then(async ({username, encKey, id, masterKey}) => {
+			db.setSymmetricKey(encKey)
 			await enc.setMasterKey(masterKey)
 			await init(id, username)
 		})

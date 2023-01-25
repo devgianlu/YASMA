@@ -9,6 +9,34 @@ export const generateMasterKey = async (): Promise<[JsonWebKey, JsonWebKey]> => 
 	]
 }
 
+export const deriveSymmetricKey = async (passphrase: string, salt: string): Promise<CryptoKey> => {
+	const rawKey = await window.crypto.subtle.importKey('raw', textToBuffer(passphrase), 'PBKDF2', false, ['deriveBits', 'deriveKey'])
+	return await window.crypto.subtle.deriveKey(
+		{
+			name: 'PBKDF2',
+			salt: textToBuffer(salt),
+			iterations: 100000,
+			hash: 'SHA-256',
+		},
+		rawKey,
+		{name: 'AES-CBC', length: 256},
+		true,
+		['encrypt', 'decrypt'],
+	)
+}
+
+export const encryptSymmetric = async (key: CryptoKey, data: string) => {
+	const iv = new Uint8Array(16)
+	await window.crypto.getRandomValues(iv)
+	const encrypted = bufferToBase64(await window.crypto.subtle.encrypt({name: 'AES-CBC', iv}, key, textToBuffer(data)))
+	return bufferToBase64(iv) + ';' + encrypted
+}
+
+export const decryptSymmetric = async (key: CryptoKey, data: string) => {
+	const [iv, encrypted] = data.split(';')
+	return bufferToText(await window.crypto.subtle.decrypt({name: 'AES-CBC', iv: base64ToBuffer(iv)}, key, base64ToBuffer(encrypted)))
+}
+
 const bufferToBase64 = (buffer: ArrayBuffer) => {
 	let str = ''
 	const bytes = new Uint8Array(buffer)
@@ -27,6 +55,10 @@ const base64ToBuffer = (data: string) => {
 
 const textToBuffer = (text: string) => {
 	return new TextEncoder().encode(text)
+}
+
+const bufferToText = (buffer: ArrayBuffer) => {
+	return new TextDecoder().decode(buffer)
 }
 
 class EncryptionManager {

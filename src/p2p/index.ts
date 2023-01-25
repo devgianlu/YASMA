@@ -1,8 +1,7 @@
 import {Chat} from '../types'
 import db from './db'
 import manager from './peer'
-import * as Crypto from 'crypto-js'
-import enc, {generateMasterKey} from './enc'
+import enc, {decryptSymmetric, deriveSymmetricKey, encryptSymmetric, generateMasterKey} from './enc'
 
 const firstSetup = async () => {
 	const id = 'yasma_' + window.crypto.randomUUID()
@@ -12,30 +11,40 @@ const firstSetup = async () => {
 	while (!username || username.length < 3)
 		username = prompt('Enter your username:')
 
-	let key = ''
-	while (!key)
-		key = prompt('Enter your encryption key:')
+	let passphrase = ''
+	while (!passphrase)
+		passphrase = prompt('Enter your passphrase:')
 
-	localStorage.setItem('yasma_self_id', Crypto.AES.encrypt(id, key).toString())
-	localStorage.setItem('yasma_username', Crypto.AES.encrypt(username, key).toString())
-	localStorage.setItem('yasma_master_key', Crypto.AES.encrypt(JSON.stringify(masterKey), key).toString())
+	const salt = window.crypto.randomUUID()
+	const encKey = await deriveSymmetricKey(passphrase, salt)
 
-	return {id, username, key, masterKey}
+	localStorage.setItem('yasma_salt', salt)
+	localStorage.setItem('yasma_self_id', await encryptSymmetric(encKey, id))
+	localStorage.setItem('yasma_username', await encryptSymmetric(encKey, username))
+	localStorage.setItem('yasma_master_key', await encryptSymmetric(encKey, JSON.stringify(masterKey)))
+
+	return {id, username, encKey, masterKey}
 }
 
-export const initEncryption = async (): Promise<{ username: string, id: string, key: string, masterKey: [JsonWebKey, JsonWebKey] }> => {
+export const initEncryption = async (): Promise<{ username: string, id: string, encKey: CryptoKey, masterKey: [JsonWebKey, JsonWebKey] }> => {
 	const storedId = localStorage.getItem('yasma_self_id')
 	if (!storedId)
 		return await firstSetup()
 
-	let id = '', key: string
+	const salt = localStorage.getItem('yasma_salt')
+	if (!salt)
+		return await firstSetup()
+
+	let id = '', encKey: CryptoKey
 	while (!id.startsWith('yasma_')) {
-		key = prompt('Enter the secret key:')
-		if (!key)
+		const passphrase = prompt('Enter your passphrase:')
+		if (!passphrase)
 			continue
 
+		encKey = await deriveSymmetricKey(passphrase, salt)
+
 		try {
-			id = Crypto.AES.decrypt(storedId, key).toString(Crypto.enc.Utf8)
+			id = await decryptSymmetric(encKey, storedId)
 		} catch (err) {
 			console.error(`cannot decrypt id: ${err.message}`)
 		}
@@ -43,19 +52,19 @@ export const initEncryption = async (): Promise<{ username: string, id: string, 
 
 	let username
 	try {
-		username = Crypto.AES.decrypt(localStorage.getItem('yasma_username'), key).toString(Crypto.enc.Utf8)
+		username = await decryptSymmetric(encKey, localStorage.getItem('yasma_username'))
 	} catch (err) {
 		throw new Error(`cannot decrypt username: ${err.message}`)
 	}
 
 	let masterKey: [JsonWebKey, JsonWebKey]
 	try {
-		masterKey = JSON.parse(Crypto.AES.decrypt(localStorage.getItem('yasma_master_key'), key).toString(Crypto.enc.Utf8))
+		masterKey = JSON.parse(await decryptSymmetric(encKey, localStorage.getItem('yasma_master_key')))
 	} catch (err) {
 		throw new Error(`cannot decrypt master key: ${err.message}`)
 	}
 
-	return {username, id, key, masterKey}
+	return {username, id, encKey, masterKey}
 }
 
 export const init = async (localPeerId: string, localUsername: string) => {
