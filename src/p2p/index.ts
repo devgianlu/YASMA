@@ -26,7 +26,7 @@ const firstSetup = async () => {
 	return {id, username, encKey, masterKey}
 }
 
-export const initEncryption = async (): Promise<{ username: string, id: string, encKey: CryptoKey, masterKey: [JsonWebKey, JsonWebKey] }> => {
+export const initEncryption = async (passphrase: string): Promise<{ username: string, id: string, encKey: CryptoKey, masterKey: [JsonWebKey, JsonWebKey] }> => {
 	const storedId = localStorage.getItem('yasma_self_id')
 	if (!storedId)
 		return await firstSetup()
@@ -35,33 +35,15 @@ export const initEncryption = async (): Promise<{ username: string, id: string, 
 	if (!salt)
 		return await firstSetup()
 
-	let id = '', encKey: CryptoKey
-	while (!id.startsWith('yasma_')) {
-		const passphrase = prompt('Enter your passphrase:')
-		if (!passphrase)
-			continue
+	const encKey = await deriveSymmetricKey(passphrase, salt)
 
-		encKey = await deriveSymmetricKey(passphrase, salt)
-
-		try {
-			id = await decryptSymmetric(encKey, storedId)
-		} catch (err) {
-			console.error(`cannot decrypt id: ${err.message}`)
-		}
-	}
-
-	let username
+	let id, username, masterKey: [JsonWebKey, JsonWebKey]
 	try {
+		id = await decryptSymmetric(encKey, storedId)
 		username = await decryptSymmetric(encKey, localStorage.getItem('yasma_username'))
-	} catch (err) {
-		throw new Error(`cannot decrypt username: ${err.message}`)
-	}
-
-	let masterKey: [JsonWebKey, JsonWebKey]
-	try {
 		masterKey = JSON.parse(await decryptSymmetric(encKey, localStorage.getItem('yasma_master_key')))
 	} catch (err) {
-		throw new Error(`cannot decrypt master key: ${err.message}`)
+		throw new Error(`failed decrypting: ${err.message}`)
 	}
 
 	return {username, id, encKey, masterKey}

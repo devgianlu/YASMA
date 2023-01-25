@@ -93,12 +93,8 @@ class Database {
 	}
 
 	async #decrypt<T>(item: EncryptedData): Promise<T> {
-		if (!this.#key) {
-			await new Promise(accept => setTimeout(accept, 5000)) // FIXME: HUGE HACK
-
-			if (!this.#key)
-				throw new Error('Missing encryption key')
-		}
+		if (!this.#key)
+			throw new Error('Missing encryption key')
 
 		if (item === undefined)
 			return undefined
@@ -107,12 +103,8 @@ class Database {
 	}
 
 	async #encrypt<T>(item: T): Promise<EncryptedData> {
-		if (!this.#key) {
-			await new Promise(accept => setTimeout(accept, 5000)) // FIXME: HUGE HACK
-
-			if (!this.#key)
-				throw new Error('Missing encryption key')
-		}
+		if (!this.#key)
+			throw new Error('Missing encryption key')
 
 		return {'__encrypted__': await encryptSymmetric(this.#key, JSON.stringify(item))}
 	}

@@ -1,12 +1,9 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
-import Router from './Router'
-
+import Router from './router'
 import 'bootstrap/dist/css/bootstrap.min.css'
-import {deinit, init, initEncryption} from './p2p'
+import {deinit} from './p2p'
 import {initNotifications} from './p2p/notification'
-import db from './p2p/db'
-import enc from './p2p/enc'
 
 const root = ReactDOM.createRoot(
 	document.getElementById('root') as HTMLElement
@@ -19,14 +16,6 @@ root.render(
 
 window.addEventListener('load', () => {
 	initNotifications()
-
-	initEncryption()
-		.then(async ({username, encKey, id, masterKey}) => {
-			db.setSymmetricKey(encKey)
-			await enc.setMasterKey(masterKey)
-			await init(id, username)
-		})
-		.catch(err => console.error(`failed initializing: ${err.message}`))
 })
 
 window.addEventListener('unload', () => {
