@@ -27,6 +27,9 @@ module.exports = {
 			template: path.join(__dirname, 'public', 'index.html'),
 		})
 	],
+	devServer: {
+		historyApiFallback: true,
+	},
 	output: {
 		filename: 'bundle.js',
 		path: path.resolve(__dirname, 'dist'),
