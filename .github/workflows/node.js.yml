@@ -17,4 +17,10 @@ jobs:
         node-version: 18
         cache: 'npm'
     - run: npm ci
-    - run: npm run deploy
+    - run: npm run build
+    - uses: peaceiris/actions-gh-pages@v3
+      if: ${{ github.event_name != 'pull_request' }}
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        publish_dir: dist
+        force_orphan: true
