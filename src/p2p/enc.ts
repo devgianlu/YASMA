@@ -34,7 +34,10 @@ export const encryptSymmetric = async (key: CryptoKey, data: string) => {
 
 export const decryptSymmetric = async (key: CryptoKey, data: string) => {
 	const [iv, encrypted] = data.split(';')
-	return bufferToText(await window.crypto.subtle.decrypt({name: 'AES-CBC', iv: base64ToBuffer(iv)}, key, base64ToBuffer(encrypted)))
+	return bufferToText(await window.crypto.subtle.decrypt({
+		name: 'AES-CBC',
+		iv: base64ToBuffer(iv)
+	}, key, base64ToBuffer(encrypted)))
 }
 
 const bufferToBase64 = (buffer: ArrayBuffer) => {
@@ -43,6 +46,18 @@ const bufferToBase64 = (buffer: ArrayBuffer) => {
 	for (let i = 0; i < bytes.byteLength; i++)
 		str += String.fromCharCode(bytes[i])
 	return window.btoa(str)
+}
+
+const bufferToHex = (buffer: ArrayBuffer) => {
+	let str = ''
+	const bytes = new Uint8Array(buffer)
+	for (let i = 0; i < bytes.byteLength; i++)
+		str += bytes[i].toString(16).padStart(2, '0')
+	return str
+}
+
+export const publicKeyFingerprint = async (key: JsonWebKey) => {
+	return bufferToHex(await window.crypto.subtle.digest('SHA-256', textToBuffer(JSON.stringify(key)))).slice(0, 32)
 }
 
 const base64ToBuffer = (data: string) => {
@@ -104,6 +119,10 @@ class EncryptionManager {
 
 	async publicJwk(): Promise<JsonWebKey> {
 		return await window.crypto.subtle.exportKey('jwk', this.#masterKey.publicKey)
+	}
+
+	async publicFingerprint(): Promise<string> {
+		return publicKeyFingerprint(await this.publicJwk())
 	}
 }
 

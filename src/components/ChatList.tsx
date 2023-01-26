@@ -5,6 +5,7 @@ import {ChatItem, ChatMessage} from '../types'
 import db, {ChatEvent} from '../p2p/db'
 import AddContactModal from './AddContactModal'
 import manager, {PeerEvent} from '../p2p/peer'
+import enc from '../p2p/enc'
 
 const ChatListItem: FunctionComponent<{ item: ChatItem, online: boolean }> = ({item, online}) => {
 	const ctx = useContext(HomepageContext)
@@ -51,8 +52,18 @@ const ChatListItem: FunctionComponent<{ item: ChatItem, online: boolean }> = ({i
 
 const ChatList: FunctionComponent = () => {
 	const [chats, setChats] = useState<ChatItem[]>([])
+	const [publicFp, setPublicFp] = useState('')
 	const [online, setOnline] = useState<{ [key: string]: boolean }>({})
 	const [addContactShow, setAddContactShow] = useState(false)
+
+	useEffect(() => {
+		enc.publicFingerprint()
+			.then(setPublicFp)
+			.catch(err => {
+				console.error(`failed getting public key fingerprint: ${err.message}`)
+				setPublicFp('error')
+			})
+	}, [])
 
 	useEffect(() => {
 		const onChats = () => {
@@ -88,6 +99,7 @@ const ChatList: FunctionComponent = () => {
 		<div className="bg-dark text-white p-2 text-center d-grid">
 			<small className="fw-bold">{manager.username}</small>
 			<small>{manager.peerId.replace('yasma_', '')}</small>
+			<small>{publicFp}</small>
 		</div>
 	</div>)
 }

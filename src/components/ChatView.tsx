@@ -5,12 +5,30 @@ import {Button, Container, Form, InputGroup} from 'react-bootstrap'
 import {sendChatFile, sendChatMessage} from '../p2p'
 import db, {ChatEvent, MessageEvent} from '../p2p/db'
 import moment from 'moment'
+import enc, {publicKeyFingerprint} from '../p2p/enc'
 
 const ChatHeader: FunctionComponent<{ chat: Chat }> = ({chat}) => {
+	const [publicFp, setPublicFp] = useState('')
+
+	useEffect(() => {
+		db.loadPublicKey(chat.peer)
+			.then(x => {
+				publicKeyFingerprint(x)
+					.then(setPublicFp)
+					.catch(err => {
+						console.error(`failed getting public key fingerprint for ${chat.peer}: ${err.message}`)
+						setPublicFp('error')
+					})
+			})
+	}, [chat.peer])
+
 	return (
 		<div className="d-flex bg-dark align-items-center px-3 py-1">
 			<h2 className="text-white me-3">{chat.username}</h2>
-			<span className="text-muted">{chat.peer.replace('yasma_', '')}</span>
+			<div className="d-grid">
+				<small className="text-muted">{chat.peer.replace('yasma_', '')}</small>
+				<small className="text-muted">{publicFp}</small>
+			</div>
 		</div>
 	)
 }
