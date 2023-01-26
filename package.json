@@ -3,9 +3,13 @@
   "version": "1.0.0",
   "description": "Yet Another Secure Messaging App",
   "author": "devgianlu",
+  "repository": {
+    "url": "git+https://github.com/devgianlu/YASMA.git"
+  },
   "scripts": {
-    "build": "webpack --mode production",
-    "serve": "webpack serve --mode development"
+    "build": "webpack --mode production --env production",
+    "serve": "webpack serve --mode development",
+    "deploy": "webpack --mode production --env production && gh-pages -f -d dist"
   },
   "dependencies": {
     "bootstrap": "^5.2.3",
@@ -25,6 +29,7 @@
     "@typescript-eslint/parser": "^5.48.1",
     "css-loader": "^6.7.3",
     "eslint": "^8.32.0",
+    "gh-pages": "^5.0.0",
     "html-webpack-plugin": "^5.5.0",
     "serve": "^14.1.2",
     "ts-loader": "^9.4.2",

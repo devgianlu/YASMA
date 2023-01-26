@@ -31,9 +31,13 @@ const Router: FunctionComponent = () => {
 		}
 	}, [auth])
 
+	// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+	// @ts-ignore
+	const publicPath: string = __publicPath__
+
 	return (
 		<AuthContext.Provider value={{setAuth}}>
-			<BrowserRouter>
+			<BrowserRouter basename={publicPath}>
 				<Routes>{routes}</Routes>
 			</BrowserRouter>
 		</AuthContext.Provider>
