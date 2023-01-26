@@ -12,6 +12,7 @@ export type ChatMessage = {
 	time: number
 	read: boolean
 	own: boolean
+	verified: boolean
 }
 
 export type Chat = {

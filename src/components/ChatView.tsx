@@ -5,20 +5,18 @@ import {Button, Container, Form, InputGroup} from 'react-bootstrap'
 import {sendChatFile, sendChatMessage} from '../p2p'
 import db, {ChatEvent, MessageEvent} from '../p2p/db'
 import moment from 'moment'
-import enc, {publicKeyFingerprint} from '../p2p/enc'
+import {publicKeyFingerprint} from '../p2p/enc'
 
 const ChatHeader: FunctionComponent<{ chat: Chat }> = ({chat}) => {
 	const [publicFp, setPublicFp] = useState('')
 
 	useEffect(() => {
 		db.loadPublicKey(chat.peer)
-			.then(x => {
-				publicKeyFingerprint(x)
-					.then(setPublicFp)
-					.catch(err => {
-						console.error(`failed getting public key fingerprint for ${chat.peer}: ${err.message}`)
-						setPublicFp('error')
-					})
+			.then(x => publicKeyFingerprint(x))
+			.then(setPublicFp)
+			.catch(err => {
+				console.error(`failed getting public key fingerprint for ${chat.peer}: ${err.message}`)
+				setPublicFp('error')
 			})
 	}, [chat.peer])
 
@@ -48,7 +46,7 @@ const ChatMessage: FunctionComponent<{
 	readLine: boolean,
 	unsent: boolean
 }> = ({msg, readLine, unsent}) => {
-	const classes = []
+	const classes = ['d-grid']
 	if (msg.own) classes.push('text-end')
 	else classes.push('text-start')
 	if (readLine) classes.push('border-top border-primary')
@@ -57,16 +55,19 @@ const ChatMessage: FunctionComponent<{
 		const filename = msg.content.substring(0, msg.content.indexOf('\x00'))
 		const content = msg.content.substring(msg.content.indexOf('\x00') + 1)
 		return (<div className={classes.join(' ')}>
-			<div className={'mb-0 lh-sm' + (unsent ? ' text-danger' : '')}>
+			<div className="mb-0 lh-sm">
 				<a href="#" onClick={() => fakeDownload(filename, content)}>{filename}</a>
 			</div>
 			<small className="text-muted">{moment(msg.time).fromNow()}</small>
+			{unsent && <small className="text-danger">Unsent</small>}
+			{!msg.own && !msg.verified && <small className="text-danger">Unverified</small>}
 		</div>)
 	} else {
 		return (<div className={classes.join(' ')}>
-			<div
-				className={'mb-0 lh-sm text-wrap text-break text-truncate' + (unsent ? ' text-danger' : '')}>{msg.content}</div>
+			<div className="mb-0 lh-sm text-wrap text-break text-truncate">{msg.content}</div>
 			<small className="text-muted">{moment(msg.time).fromNow()}</small>
+			{unsent && <small className="text-danger">Unsent</small>}
+			{!msg.own && !msg.verified && <small className="text-danger">Unverified</small>}
 		</div>)
 	}
 }

@@ -28,6 +28,10 @@ const emitPeerOnlineNotification = (username: string) => {
 	new Notification(`${username} is online - YASMA`)
 }
 
+const emitPublicKeyChangedNotification = (username: string) => {
+	new Notification(`${username} public key changed - YASMA`)
+}
+
 const setupListeners = () => {
 	db.on('message', ({peer, msg}) => {
 		if (msg.own || msg.read)
@@ -41,5 +45,11 @@ const setupListeners = () => {
 			return
 
 		emitPeerOnlineNotification(username)
+	})
+	db.on('publicKeyChanged', ({username}) => {
+		if (!username)
+			return
+
+		emitPublicKeyChangedNotification(username)
 	})
 }

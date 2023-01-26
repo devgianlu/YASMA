@@ -47,7 +47,12 @@ export type MessageEvent = {
 	peer: string
 	msg: ChatMessage
 }
-type Event = ChatsEvent | ChatEvent | MessageEvent
+export type PublicKeyChangedEvent = {
+	type: 'publicKeyChanged'
+	peer: string
+	username: string | null
+}
+type Event = ChatsEvent | ChatEvent | MessageEvent | PublicKeyChangedEvent
 
 type Listener<Type extends Event['type']> = (data: Readonly<Event & { type: Type }>) => void
 
@@ -283,7 +288,7 @@ class Database {
 		if (typeof counter !== 'number') counter = 0
 
 		// We store the "read" field separately
-		const msgWithId = {id: counter, file: msg.file, content: msg.content, time: msg.time, own: msg.own}
+		const msgWithId = {id: counter, file: msg.file, content: msg.content, time: msg.time, own: msg.own, verified: msg.verified}
 		await this.#put('messages', messageIdToDatabaseKey(peer, counter), msgWithId)
 		await this.#put('counters', peer, counter + 1)
 
@@ -307,7 +312,13 @@ class Database {
 			return
 		}
 
-		// TODO: verify keys are equal!
+		if (JSON.stringify(key) !== JSON.stringify(currentKey)) {
+			let username = null
+			const chat = await db.getChat(peer)
+			if (chat) username = chat.username
+
+			this.#emit({type: 'publicKeyChanged', peer, username})
+		}
 	}
 }
 

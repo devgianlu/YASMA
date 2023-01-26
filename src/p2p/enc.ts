@@ -92,21 +92,19 @@ class EncryptionManager {
 		}
 	}
 
-	async verifyMessage(data: string, publicKeyData: JsonWebKey): Promise<string | null> {
+	async verifyMessage(data: string, publicKeyData: JsonWebKey): Promise<[string, boolean]> {
 		const [content, signature] = data.split(';')
 		const publicKey = await window.crypto.subtle.importKey('jwk', publicKeyData, {
 			name: 'ECDSA',
 			namedCurve: 'P-384'
 		}, true, ['verify'])
 
-		if (!(await window.crypto.subtle.verify({
+		const verified = await window.crypto.subtle.verify({
 			name: 'ECDSA',
 			hash: 'SHA-256'
-		}, publicKey, base64ToBuffer(signature), base64ToBuffer(content)))) {
-			return null
-		}
+		}, publicKey, base64ToBuffer(signature), base64ToBuffer(content))
 
-		return window.atob(content)
+		return [window.atob(content), verified]
 	}
 
 	async signMessage(content: string) {

@@ -77,11 +77,9 @@ export const init = async (localPeerId: string, localUsername: string) => {
 			if (!publicKeyData)
 				throw new Error('no public key')
 
-			const plainContent = await enc.verifyMessage(content, publicKeyData)
-			if (plainContent === null)
-				throw new Error('could not verify')
+			const [plainContent, verified] = await enc.verifyMessage(content, publicKeyData)
 
-			await db.storeMessage(peer, {content: plainContent, time, file, read: false, own: false})
+			await db.storeMessage(peer, {content: plainContent, time, file, read: false, own: false, verified})
 		})().catch(err => console.error(`failed handling message from ${peer}: ${err.message}`))
 	})
 
@@ -105,7 +103,7 @@ export const startChat = async (peer: string): Promise<Chat> => {
 
 export const sendChatMessage = async (peer: string, text: string): Promise<void> => {
 	const time = Date.now()
-	const msg = await db.storeMessage(peer, {content: text, time, file: false, read: true, own: true})
+	const msg = await db.storeMessage(peer, {content: text, time, file: false, read: true, own: true, verified: true})
 	await db.storeUnsentMessage(peer, msg)
 
 	try {
@@ -125,7 +123,7 @@ export const sendChatFile = async (peer: string, file: File): Promise<void> => {
 	})
 
 	const time = Date.now()
-	const msg = await db.storeMessage(peer, {content, time, file: true, read: true, own: true})
+	const msg = await db.storeMessage(peer, {content, time, file: true, read: true, own: true, verified: true})
 	await db.storeUnsentMessage(peer, msg)
 
 	try {
