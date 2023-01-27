@@ -15,21 +15,27 @@ const Auth: FunctionComponent = () => {
 	const navigate = useNavigate()
 	const {setAuth} = useContext(AuthContext)
 	const [passphrase, setPassphrase] = useState('')
-	const [invalidPassphrase, setInvalidPassphrase] = useState(false)
+	const [error, setError] = useState('')
 
 	const doAuth = useCallback(() => {
 		initEncryption(passphrase)
 			.then(async ({username, encKey, id, masterKey}) => {
 				db.setSymmetricKey(encKey)
-				await enc.setMasterKey(masterKey)
-				await init(id, username)
+				
+				try {
+					await enc.setMasterKey(masterKey)
+					await init(id, username)
+				} catch (err) {
+					setError('Failed initializing P2P')
+					return
+				}
 
 				setAuth(true)
 				navigate('/', {replace: true})
 			})
 			.catch(err => {
 				console.error(`failed initializing: ${err.message}`)
-				setInvalidPassphrase(true)
+				setError('The provided passphrase is invalid')
 				setAuth(false)
 			})
 	}, [passphrase, navigate])
@@ -44,14 +50,14 @@ const Auth: FunctionComponent = () => {
 						placeholder="Passphrase"
 						value={passphrase}
 						onChange={ev => {
-							setInvalidPassphrase(false)
+							setError('')
 							setPassphrase(ev.target.value)
 						}}
 						onKeyDown={ev => {
 							if (ev.key === 'Enter') doAuth()
 						}}/>
-					{invalidPassphrase && (
-						<h4 className="text-danger">The provided passphrase is invalid</h4>
+					{error && (
+						<h4 className="text-danger">{error}</h4>
 					)}
 					<Button variant="primary" onClick={() => doAuth()}>Enter</Button>
 				</Stack>
