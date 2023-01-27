@@ -114,6 +114,16 @@ class Database {
 		return {'__encrypted__': await encryptSymmetric(this.#key, JSON.stringify(item))}
 	}
 
+	async #delete<T extends keyof DbTypes>(objectStore: T, key: IDBValidKey | IDBKeyRange) {
+		await this.#ensureDbReady()
+		await new Promise<void>((accept, reject) => {
+			const trans = this.#db.transaction(objectStore, 'readwrite')
+			const req = trans.objectStore(objectStore).delete(key)
+			req.addEventListener('success', () => accept())
+			req.addEventListener('error', () => reject(req.error))
+		})
+	}
+
 	async #put<T extends keyof DbTypes>(objectStore: T, key: IDBValidKey, value: DbTypes[T]) {
 		await this.#ensureDbReady()
 		const encrypted = await this.#encrypt<DbTypes[T]>(value)
@@ -247,6 +257,18 @@ class Database {
 		this.#emit({type: 'chat', peer})
 	}
 
+	async deleteChat(peer: string): Promise<void> {
+		await this.#delete('unsentMessages', peer)
+		await this.#delete('unreadMessages', peer)
+		await this.#delete('messages', IDBKeyRange.bound(peer + '_0', peer + '_9'))
+		await this.#delete('counters', peer)
+		await this.#delete('chats', peer)
+		await this.#delete('publicKeys', peer)
+
+		this.#emit({type: 'chats'})
+		this.#emit({type: 'chat', peer})
+	}
+
 	async storeUnsentMessage(peer: string, msg: ChatMessage): Promise<void> {
 		if (!msg.own)
 			throw new Error('Only own messages can be unsent!')
@@ -288,7 +310,14 @@ class Database {
 		if (typeof counter !== 'number') counter = 0
 
 		// We store the "read" field separately
-		const msgWithId = {id: counter, file: msg.file, content: msg.content, time: msg.time, own: msg.own, verified: msg.verified}
+		const msgWithId = {
+			id: counter,
+			file: msg.file,
+			content: msg.content,
+			time: msg.time,
+			own: msg.own,
+			verified: msg.verified
+		}
 		await this.#put('messages', messageIdToDatabaseKey(peer, counter), msgWithId)
 		await this.#put('counters', peer, counter + 1)
 

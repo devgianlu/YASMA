@@ -9,6 +9,7 @@ import {publicKeyFingerprint} from '../p2p/enc'
 
 const ChatHeader: FunctionComponent<{ chat: Chat }> = ({chat}) => {
 	const [publicFp, setPublicFp] = useState('')
+	const {setCurrent} = useContext(HomepageContext)
 
 	useEffect(() => {
 		db.loadPublicKey(chat.peer)
@@ -20,6 +21,12 @@ const ChatHeader: FunctionComponent<{ chat: Chat }> = ({chat}) => {
 			})
 	}, [chat.peer])
 
+	const deleteChat = useCallback(() => {
+		db.deleteChat(chat.peer)
+			.then(() => setCurrent(undefined))
+			.catch(err => console.error(`failed deleting chat: ${err.message}`))
+	}, [chat.peer])
+
 	return (
 		<div className="d-flex bg-dark align-items-center px-3 py-1">
 			<h2 className="text-white me-3">{chat.username}</h2>
@@ -27,6 +34,8 @@ const ChatHeader: FunctionComponent<{ chat: Chat }> = ({chat}) => {
 				<small className="text-muted">{chat.peer.replace('yasma_', '')}</small>
 				<small className="text-muted">{publicFp}</small>
 			</div>
+			<div className="flex-grow-1"></div>
+			<Button variant="danger" onClick={deleteChat}>Delete</Button>
 		</div>
 	)
 }
