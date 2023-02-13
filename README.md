@@ -35,7 +35,7 @@ and [IndexedDB](https://developer.mozilla.org/en-US/docs/Web/API/IndexedDB_API).
 
 ## How To
 
-The app uses relatively new browser APIs, check your support [here](https://caniuse.com/indexeddb,mdn-api_subtlecrypto).
+The app uses relatively new browser APIs, check your support [here](https://caniuse.com/indexeddb,mdn-api_subtlecrypto). Tested on Chrome and Firefox.
 
 ### First setup
 
