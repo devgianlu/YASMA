@@ -43,7 +43,7 @@ const ChatHeader: FunctionComponent<{ chat: Chat }> = ({chat}) => {
 const fakeDownload = (filename: string, content: string) => {
 	const elem = document.createElement('a')
 	elem.style.display = 'none'
-	elem.setAttribute('href', 'data:application/octet-stream,' + encodeURIComponent(window.atob(content)))
+	elem.setAttribute('href', 'data:application/octet-stream,' + encodeURIComponent(content))
 	elem.setAttribute('download', filename)
 	document.body.appendChild(elem)
 	elem.click()
